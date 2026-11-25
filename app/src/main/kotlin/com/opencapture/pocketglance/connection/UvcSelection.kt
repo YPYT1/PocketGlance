@@ -65,6 +65,6 @@ object UvcSelection {
     /** 16:9 判定，带小容差以容忍个别厂商的近似尺寸。 */
     fun isSixteenNine(width: Int, height: Int): Boolean {
         if (width <= 0 || height <= 0) return false
-        return abs(width.toFloat() / height - 16f / 9f) < 0.02f
+        return abs(maxOf(width, height).toFloat() / minOf(width, height) - 16f / 9f) < 0.02f
     }
 }

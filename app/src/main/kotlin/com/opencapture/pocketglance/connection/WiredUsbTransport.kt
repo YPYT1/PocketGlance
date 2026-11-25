@@ -81,7 +81,7 @@ class WiredUsbTransport(
             )
             return
         }
-        val uvcDevice = device ?: return
+        val uvcDevice = device
         boundDevice = uvcDevice
         logInterfaces(uvcDevice)
         GlanceLog.i("wired", "uvc device ${deviceLabel(uvcDevice)}")

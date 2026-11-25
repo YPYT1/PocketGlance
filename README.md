@@ -53,6 +53,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## 版本
 
+- **1.1.1**：LUT 顶栏紧凑搜索 +「确定」收起；右上角不再用「全部」。
 - **1.1**：手机监视 HUD／LUT 选择器适配；录制时长独立成行避免遮挡。
 - **1.0**：首个对外标记版本；实机范围仅限 Pocket 4P（见上方兼容性说明）。
 

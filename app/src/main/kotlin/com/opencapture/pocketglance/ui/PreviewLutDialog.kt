@@ -1,14 +1,16 @@
 package com.opencapture.pocketglance.ui
 
 import android.content.res.Configuration
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -22,10 +24,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,10 +40,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.opencapture.pocketglance.PreviewLutState
@@ -110,22 +115,19 @@ internal fun PreviewLutDialog(
                     compact = !tablet,
                     title = selectedCategory?.let(::lutCategoryTitle) ?: "选择 LUT",
                     subtitle = subtitle,
-                    showAllCategories = selectedCategory != null || search.isNotEmpty(),
-                    onBack = onClose,
-                    onShowAll = {
-                        selectedCategory = null
-                        query = ""
+                    query = query,
+                    onQueryChange = { query = it },
+                    searchHint = if (selectedCategory == null) "搜索" else "搜索",
+                    onBack = {
+                        // 竖屏进了分类时先退回分类列表；否则退出监视 HUD。
+                        if (!sideBySide && (selectedCategory != null || search.isNotEmpty())) {
+                            selectedCategory = null
+                            query = ""
+                        } else {
+                            onClose()
+                        }
                     },
-                )
-                OutlinedTextField(
-                    query,
-                    { query = it },
-                    modifier = Modifier.fillMaxWidth().heightIn(max = if (tablet) 56.dp else 48.dp),
-                    singleLine = true,
-                    textStyle = if (tablet) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
-                    placeholder = {
-                        Text(if (selectedCategory == null) "搜索 LUT 或分类" else "在此分类中搜索")
-                    },
+                    onConfirm = onClose,
                 )
 
                 if (sideBySide) {
@@ -204,41 +206,90 @@ private fun LutDialogHeader(
     compact: Boolean,
     title: String,
     subtitle: String,
-    showAllCategories: Boolean,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    searchHint: String,
     onBack: () -> Unit,
-    onShowAll: () -> Unit,
+    onConfirm: () -> Unit,
 ) {
     if (compact) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             TextButton(onClick = onBack, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
-                Text("返回", color = GlanceColors.azure, maxLines = 1)
+                Text("返回", color = GlanceColors.azure, maxLines = 1, fontSize = 13.sp)
             }
             Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            if (showAllCategories) {
-                TextButton(onClick = onShowAll, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
-                    Text("全部", maxLines = 1)
-                }
+            LutCompactSearch(
+                query = query,
+                onQueryChange = onQueryChange,
+                hint = searchHint,
+                modifier = Modifier.widthIn(min = 88.dp, max = 132.dp),
+            )
+            TextButton(onClick = onConfirm, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
+                Text("确定", color = GlanceColors.pear, maxLines = 1, fontSize = 13.sp)
             }
         }
     } else {
-        MonitorBackButton(onBack)
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            MonitorBackButton(onBack)
             Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.headlineSmall)
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium)
+                Text(title, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            if (showAllCategories) {
-                TextButton(onClick = onShowAll) { Text("全部分类") }
+            LutCompactSearch(
+                query = query,
+                onQueryChange = onQueryChange,
+                hint = searchHint,
+                modifier = Modifier.widthIn(min = 160.dp, max = 220.dp),
+            )
+            TextButton(onClick = onConfirm) {
+                Text("确定", color = GlanceColors.pear)
             }
         }
     }
+}
+
+@Composable
+private fun LutCompactSearch(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    hint: String,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    BasicTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        singleLine = true,
+        textStyle = TextStyle(color = GlanceColors.ink, fontSize = 13.sp),
+        cursorBrush = SolidColor(GlanceColors.azure),
+        modifier = modifier.height(32.dp),
+        decorationBox = { inner ->
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(32.dp)
+                    .border(1.dp, GlanceColors.ink.copy(alpha = 0.28f), shape)
+                    .padding(horizontal = 8.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                if (query.isEmpty()) {
+                    Text(hint, color = GlanceColors.inkMuted, fontSize = 12.sp, maxLines = 1)
+                }
+                inner()
+            }
+        },
+    )
 }
 
 @Composable

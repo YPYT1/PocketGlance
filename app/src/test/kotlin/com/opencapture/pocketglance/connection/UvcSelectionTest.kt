@@ -76,6 +76,7 @@ class UvcSelectionTest {
     @Test
     fun sixteenNineToleranceAcceptsStandardSizesAndRejectsFourByThree() {
         assertTrue(UvcSelection.isSixteenNine(1920, 1080))
+        assertTrue(UvcSelection.isSixteenNine(1080, 1920)) // portrait 9:16 still counts as 16:9 family
         assertTrue(UvcSelection.isSixteenNine(1280, 720))
         assertTrue(UvcSelection.isSixteenNine(1600, 900))
         assertFalse(UvcSelection.isSixteenNine(640, 480))
