@@ -1,6 +1,6 @@
 # PocketGlance（Pocket 监视器）
 
-独立 Android 工程：连接 DJI Osmo Pocket（无线 SoftAP / 有线入口）、监视画面、相册标签。  
+独立 Android 工程：连接 DJI Osmo Pocket（无线 SoftAP / 有线入口）、监视画面、浏览机身和存储卡媒体。  
 从 OpenPocketCine 的 `Apps/PocketGlance` 迁出。
 
 ## 系统文档（给 AI / 开发者）

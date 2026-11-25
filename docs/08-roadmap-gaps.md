@@ -10,7 +10,7 @@
 - 连接状态中文反馈与发现相机列表
 - 上次相机暖重连
 - DataStore 偏好读写（启动默认 / 上次模式 / 相机 id）
-- 相册 UI + `MediaKindClassifier` + 样片
+- 相机相册：机身内存／存储卡，照片和视频只读预览
 - 直播常亮与高刷尝试
 - USB accessory Manifest 过滤与有线「检测」文案
 - unit test：分类器、MonitorLayout
@@ -20,9 +20,7 @@
 | 项 | 现状 | 建议方向 |
 | --- | --- | --- |
 | 有线直播 | 只枚举 USB，不解码、不 Live | 接 AOA + 与无线共用 decoder Surface |
-| 相册媒体 | `sampleGallery()` | 接相机媒体 API；区分离线样片与真数据 |
 | 冷启动自动连接 | 偏好可存，无启动副作用 | 在 `GlanceRoot` 用 `resolveStartupMode` + 权限门 |
-| 预览 Dialog | 纯文本 | 真图/视频播放器（若需要） |
 
 ## 明确不做（当前产品范围）
 

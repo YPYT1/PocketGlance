@@ -20,12 +20,13 @@ import androidx.compose.ui.unit.dp
 import com.opencapture.pocketglance.connection.FocusGesture
 import com.opencapture.pocketglance.connection.MonitorFocus
 import com.opencapture.pocketglance.monitor.MonitorLayout
+import com.opencapture.pocketglance.monitor.PictureRotation
 import kotlin.math.abs
 
 @Composable
 internal fun MonitorFocusLayer(
     aspect: Float,
-    rotation: Float,
+    rotation: PictureRotation,
     focus: MonitorFocus,
     onFocus: (FocusGesture, Float, Float) -> Unit,
 ) {

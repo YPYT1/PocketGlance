@@ -21,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +34,7 @@ import com.opencapture.pocketglance.connection.StartupPreference
 fun SettingsScreen(
     startup: StartupPreference,
     onStartup: (StartupPreference) -> Unit,
+    backToMonitor: Boolean,
     onBack: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize().background(GlanceColors.canvas), contentAlignment = Alignment.TopCenter) {
@@ -48,16 +48,8 @@ fun SettingsScreen(
                 .padding(horizontal = 24.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("连接设置", style = MaterialTheme.typography.headlineMedium)
-            TextButton(onClick = onBack) {
-                Text("完成", color = GlanceColors.azure)
-            }
-        }
+        MonitorBackButton(onBack, label = if (backToMonitor) "返回监视界面" else "返回连接首页")
+        Text("连接设置", style = MaterialTheme.typography.headlineMedium)
 
         Column(
             modifier =

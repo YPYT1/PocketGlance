@@ -1,12 +1,13 @@
 package com.opencapture.pocketglance.ui
 
-import android.content.res.Configuration
 import android.graphics.Matrix
+import android.graphics.Bitmap
 import android.graphics.SurfaceTexture
 import android.util.Log
 import android.view.Surface
 import android.view.TextureView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -18,7 +19,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import com.opencapture.opencine.media.FeedEffectsRenderPlan
@@ -27,16 +29,19 @@ import com.opencapture.opencine.runtime.NativeGlBackend
 import com.opencapture.opencine.runtime.NativeGlesFeedSession
 import com.opencapture.opencine.runtime.ScopeSampleBus
 import com.opencapture.pocketglance.monitor.MonitorLayout
+import com.opencapture.pocketglance.monitor.PictureRotation
 import com.opencapture.pocketglance.connection.FocusGesture
 import com.opencapture.pocketglance.connection.MonitorFocus
+import kotlin.math.roundToInt
 
 /**
  * 直播画面宿主。Surface 一生一次。
- * 窗口方向与 Pocket 不一致时，用矩阵旋转+铺满，而不是改 Activity（改窗口会卡解码）。
+ * 摄像姿态只改变显示矩阵，不重建解码 Surface。
  */
 @Composable
 fun LiveFeedHost(
-    cameraVertical: Boolean,
+    rotation: PictureRotation,
+    foreground: Boolean,
     pictureWidth: Int,
     pictureHeight: Int,
     renderPlan: FeedEffectsRenderPlan,
@@ -52,6 +57,8 @@ fun LiveFeedHost(
     val availabilityState = rememberUpdatedState(onPreviewAvailable)
     val context = LocalContext.current.applicationContext
     var directOutput by remember { mutableStateOf(false) }
+    var waitingForPicture by remember { mutableStateOf(true) }
+    var lastPreview by remember { mutableStateOf<Bitmap?>(null) }
     val scopeBus = remember { ScopeSampleBus() }
     val preview = remember { InspectorPreviewPipeline(scopeBus, NativeGlBackend::create) }
     val renderer = remember {
@@ -68,16 +75,32 @@ fun LiveFeedHost(
             },
             letterboxSource = false,
             notifySurfaceOnMain = true,
+            onFirstFrame = {
+                waitingForPicture = false
+                lastPreview = null
+            },
             onFramePresented = { timestamp -> timestamp?.let { presentedState.value(it) } },
         )
     }
     LaunchedEffect(renderPlan) { renderer.updatePlan(renderPlan) }
     LaunchedEffect(pictureWidth, pictureHeight) { renderer.setSourceSize(pictureWidth, pictureHeight) }
     val aspect = pictureWidth.toFloat() / pictureHeight.coerceAtLeast(1)
-    val phonePortrait =
-        LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
-    val rotation = MonitorLayout.contentRotationDegrees(phonePortrait, cameraVertical)
     val transformState = rememberUpdatedState(aspect to rotation)
+
+    fun updateTransform(view: TextureView, sourceAspect: Float, turn: PictureRotation) {
+        val (width, height) = MonitorLayout.pictureSize(view.width.toFloat(), view.height.toFloat(), sourceAspect, turn)
+        if (width <= 0f || height <= 0f) return
+        renderer.setPictureDisplaySize(width.roundToInt(), height.roundToInt())
+        applyFeedTransform(view, sourceAspect, turn)
+    }
+
+    fun keepLastPicture(view: TextureView) {
+        if (waitingForPicture || view.width <= 0 || view.height <= 0) return
+        val scale = minOf(1f, 960f / maxOf(view.width, view.height))
+        lastPreview = runCatching {
+            view.getBitmap((view.width * scale).toInt().coerceAtLeast(1), (view.height * scale).toInt().coerceAtLeast(1))
+        }.getOrNull()
+    }
 
     fun detachSurface() {
         attachState.value(null)
@@ -100,7 +123,7 @@ fun LiveFeedHost(
                 .fillMaxSize()
                 .background(GlanceColors.ink),
     ) {
-        AndroidView(
+        if (foreground) AndroidView(
             factory = { ctx ->
                 TextureView(ctx).also { view ->
                     view.isOpaque = false
@@ -111,6 +134,7 @@ fun LiveFeedHost(
                                 width: Int,
                                 height: Int,
                             ) {
+                                waitingForPicture = true
                                 if (directOutput) {
                                     heldSurface[0] = Surface(texture)
                                     attachState.value(heldSurface[0])
@@ -118,7 +142,7 @@ fun LiveFeedHost(
                                     renderer.attachDisplay(texture, width, height)
                                 }
                                 val (sourceAspect, turn) = transformState.value
-                                applyFeedTransform(view, sourceAspect, turn)
+                                updateTransform(view, sourceAspect, turn)
                             }
 
                             override fun onSurfaceTextureSizeChanged(
@@ -128,17 +152,23 @@ fun LiveFeedHost(
                             ) {
                                 if (!directOutput) renderer.resize(width, height)
                                 val (sourceAspect, turn) = transformState.value
-                                applyFeedTransform(view, sourceAspect, turn)
+                                updateTransform(view, sourceAspect, turn)
                             }
 
                             override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
+                                keepLastPicture(view)
+                                waitingForPicture = true
                                 detachSurface()
                                 Log.d("GlanceFeed", "surface destroyed")
                                 return true
                             }
 
                             override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {
-                                if (directOutput) presentedState.value(texture.timestamp)
+                                if (directOutput) {
+                                    waitingForPicture = false
+                                    lastPreview = null
+                                    presentedState.value(texture.timestamp)
+                                }
                             }
                         }
                 }
@@ -151,34 +181,43 @@ fun LiveFeedHost(
                         attachState.value(heldSurface[0])
                     }
                 }
-                applyFeedTransform(view, aspect, rotation)
+                updateTransform(view, aspect, rotation)
                 view.isClickable = false
                 view.isFocusable = false
             },
+            onRelease = { view ->
+                view.surfaceTextureListener = null
+                keepLastPicture(view)
+                waitingForPicture = true
+                detachSurface()
+            },
             modifier = Modifier.fillMaxSize(),
         )
-        if (focus != null) MonitorFocusLayer(aspect, rotation, focus, onFocus)
+        if (waitingForPicture) lastPreview?.let { bitmap ->
+            Image(bitmap.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        }
+        if (foreground && !waitingForPicture && focus != null) MonitorFocusLayer(aspect, rotation, focus, onFocus)
     }
 }
 
 internal fun applyFeedTransform(
     view: TextureView,
     aspect: Float,
-    rotation: Float,
+    rotation: PictureRotation,
 ) {
     val vw = view.width.toFloat()
     val vh = view.height.toFloat()
     if (vw <= 0f || vh <= 0f) return
     val matrix = Matrix()
-    val (contentWidth, contentHeight) = MonitorLayout.contentSizeBeforeRotation(vw, vh, aspect, rotation != 0f)
+    val (contentWidth, contentHeight) = MonitorLayout.pictureSize(vw, vh, aspect, rotation)
     matrix.setScale(
         contentWidth / vw,
         contentHeight / vh,
         vw / 2f,
         vh / 2f,
     )
-    if (rotation != 0f) {
-        matrix.postRotate(rotation, vw / 2f, vh / 2f)
+    if (rotation != PictureRotation.Upright) {
+        matrix.postRotate(rotation.degrees, vw / 2f, vh / 2f)
     }
     view.setTransform(matrix)
 }

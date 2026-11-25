@@ -75,6 +75,7 @@ fun HomeScreen(
             modifier = Modifier.widthIn(max = 1120.dp).fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
+        if (connection.phase == ConnectionPhase.Live) MonitorBackButton(onOpenMonitor)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -104,7 +105,6 @@ fun HomeScreen(
             onPickCamera = onPickCamera,
             onDisconnect = onDisconnect,
             onRetryRecovery = onRetryRecovery,
-            onOpenMonitor = onOpenMonitor,
             onRequestPermission = onRequestPermission,
         ) }
 
@@ -171,7 +171,6 @@ private fun StatusPanel(
     onPickCamera: (String) -> Unit,
     onDisconnect: () -> Unit,
     onRetryRecovery: () -> Unit,
-    onOpenMonitor: () -> Unit,
     onRequestPermission: () -> Unit,
 ) {
     val show =
@@ -231,20 +230,11 @@ private fun StatusPanel(
             ConnectionPhase.Live -> {
                 Text(connection.message.ifBlank { "已连接" }, style = MaterialTheme.typography.bodyLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
-                        onClick = onOpenMonitor,
-                        colors =
-                            ButtonDefaults.buttonColors(
-                                containerColor = GlanceColors.pear,
-                                contentColor = GlanceColors.ink,
-                            ),
-                        shape = RoundedCornerShape(14.dp),
-                    ) { Text("进入监视") }
                     TextButton(onClick = onDisconnect) {
                         Text("断开", color = GlanceColors.coral)
                     }
                 }
-                if (connection.pocketState == PocketState.NeedsRetry) {
+                if (connection.pocketState == PocketState.NeedsRetry || connection.pocketState == PocketState.TakenOver) {
                     TextButton(onClick = onRetryRecovery) { Text("重试连接") }
                 }
             }

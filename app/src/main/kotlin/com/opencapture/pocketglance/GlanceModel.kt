@@ -14,12 +14,12 @@ import com.opencapture.pocketglance.connection.ConnectionState
 import com.opencapture.pocketglance.connection.ConnectionTransport
 import com.opencapture.pocketglance.connection.GlancePrefs
 import com.opencapture.pocketglance.connection.FocusGesture
+import com.opencapture.pocketglance.connection.PocketState
 import com.opencapture.pocketglance.connection.StartupPreference
 import com.opencapture.pocketglance.connection.WiredUsbTransport
 import com.opencapture.pocketglance.connection.WirelessSoftApTransport
-import com.opencapture.pocketglance.gallery.GalleryItem
-import com.opencapture.pocketglance.gallery.MediaKind
-import com.opencapture.pocketglance.gallery.MediaKindClassifier
+import com.opencapture.pocketglance.gallery.GlanceGallery
+import com.opencapture.pocketglance.session.LiveKeepaliveService
 import com.opencapture.pocketglance.ui.PreviewLut
 import com.opencapture.pocketglance.ui.parsePreviewCube
 import com.opencapture.pocketglance.ui.previewLook
@@ -40,6 +40,8 @@ import kotlinx.coroutines.withContext
 
 internal data class PreviewLutState(
     val entries: List<PreviewLut> = emptyList(),
+    val loadingCatalog: Boolean = true,
+    val catalogUnavailable: Boolean = false,
     val selected: PreviewLut? = null,
     val plan: FeedEffectsRenderPlan? = null,
     val loading: PreviewLut? = null,
@@ -58,6 +60,8 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
 
     private val _connection = MutableStateFlow(ConnectionState())
     val connection: StateFlow<ConnectionState> = _connection.asStateFlow()
+    private val _monitorForeground = MutableStateFlow(false)
+    val monitorForeground = _monitorForeground.asStateFlow()
 
     private val _previewLuts = MutableStateFlow(PreviewLutState())
     internal val previewLuts = _previewLuts.asStateFlow()
@@ -77,7 +81,11 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
                     emptyList()
                 }
             }
-            _previewLuts.value = _previewLuts.value.copy(entries = builtIns + _previewLuts.value.entries)
+            _previewLuts.value = _previewLuts.value.copy(
+                entries = builtIns + _previewLuts.value.entries,
+                loadingCatalog = false,
+                catalogUnavailable = builtIns.isEmpty(),
+            )
         }
     }
 
@@ -142,28 +150,18 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private val _gallery = MutableStateFlow(sampleGallery())
-    val gallery: StateFlow<List<GalleryItem>> = _gallery.asStateFlow()
-
-    private val _galleryFilter = MutableStateFlow<MediaKind?>(null)
-    val galleryFilter: StateFlow<MediaKind?> = _galleryFilter.asStateFlow()
-
-    val filteredGallery: StateFlow<List<GalleryItem>> =
-        combine(_gallery, _galleryFilter) { items, filter ->
-            if (filter == null) items else items.filter { it.kind == filter }
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, sampleGallery())
-
     private var transport: ConnectionTransport? = null
+    internal val gallery = GlanceGallery(viewModelScope) { (transport as? WirelessSoftApTransport)?.galleryService() }
     private var observeJob: kotlinx.coroutines.Job? = null
     private var lastSurface: Surface? = null
     private val transitionMutex = Mutex()
+    fun setMonitorForeground(foreground: Boolean) {
+        _monitorForeground.value = foreground
+        (transport as? WirelessSoftApTransport)?.setMonitorForeground(foreground)
+    }
 
     fun setStartupPreference(value: StartupPreference) {
         viewModelScope.launch { prefs.setStartupPreference(value) }
-    }
-
-    fun setGalleryFilter(kind: MediaKind?) {
-        _galleryFilter.value = kind
     }
 
     fun connect(mode: ConnectionMode) {
@@ -178,8 +176,20 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
                     liveSurface()?.let(current::attachSurface)
                     return@withLock
                 }
+                gallery.closeAndWait()
                 transport?.disconnect()
                 observeJob?.cancel()
+                observeJob = null
+                transport = null
+                if (mode == ConnectionMode.Wireless) {
+                    val started = runCatching { LiveKeepaliveService.start(getApplication()) }
+                    if (started.isFailure) {
+                        _connection.value = ConnectionState(mode, ConnectionPhase.Failed, "无法启用后台连接，请回到应用后重试。")
+                        return@withLock
+                    }
+                } else {
+                    LiveKeepaliveService.stop(getApplication())
+                }
                 val warmCamera =
                     if (mode == ConnectionMode.Wireless) prefs.lastCameraId.first() else null
                 val next =
@@ -196,11 +206,18 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
                         ConnectionMode.Wired -> WiredUsbTransport(getApplication())
                     }
                 transport = next
+                (next as? WirelessSoftApTransport)?.setMonitorForeground(_monitorForeground.value)
                 observeJob =
                     viewModelScope.launch {
                         if (next is WirelessSoftApTransport) {
                             combine(next.state, next.focus) { connection, focus -> connection.copy(focus = focus) }
-                                .collect { _connection.value = it }
+                                .collect { state ->
+                                    _connection.value = state
+                                    if ((state.phase == ConnectionPhase.Failed && !next.hasRetryTarget) ||
+                                        state.pocketState == PocketState.TakenOver) {
+                                        LiveKeepaliveService.stop(getApplication())
+                                    }
+                                }
                         } else {
                             next.state.collect { _connection.value = it }
                         }
@@ -220,6 +237,7 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
     fun disconnect() {
         viewModelScope.launch {
             transitionMutex.withLock {
+                gallery.closeAndWait()
                 observeJob?.cancel()
                 observeJob = null
                 transport?.attachSurface(null)
@@ -227,6 +245,7 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
                 transport?.disconnect()
                 transport = null
                 _connection.value = ConnectionState()
+                LiveKeepaliveService.stop(getApplication())
             }
         }
     }
@@ -241,6 +260,9 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun retryRecovery() {
+        if (_connection.value.pocketState == PocketState.TakenOver) {
+            if (runCatching { LiveKeepaliveService.start(getApplication()) }.isFailure) return
+        }
         (transport as? WirelessSoftApTransport)?.retryRecovery()
     }
 
@@ -254,15 +276,4 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
             null
         }
 
-    companion object {
-        fun sampleGallery(): List<GalleryItem> =
-            listOf(
-                GalleryItem("1", "样片 静图 01", MediaKindClassifier.classify("DSC_1001.jpg")),
-                GalleryItem("2", "样片 视频 08", MediaKindClassifier.classify("CLIP_08.mp4")),
-                GalleryItem("3", "样片 动图 A", MediaKindClassifier.classify("MOTION_A.gif")),
-                GalleryItem("4", "样片 代理 12", MediaKindClassifier.classify("PROXY_12.lrf")),
-                GalleryItem("5", "样片 静图 22", MediaKind.Image),
-                GalleryItem("6", "样片 动图 03", MediaKindClassifier.classify("LIVE_03.dng", motionFlag = true)),
-            )
-    }
 }

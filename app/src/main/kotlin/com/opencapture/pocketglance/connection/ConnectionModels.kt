@@ -1,6 +1,7 @@
 package com.opencapture.pocketglance.connection
 
 import com.opencapture.opencine.vocabulary.TrackingBox
+import com.opencapture.pocketglance.monitor.PictureRotation
 
 enum class FocusGesture { Tap, Track, Hold, Unlock, StopTracking }
 
@@ -47,6 +48,7 @@ enum class PocketState(val label: String) {
     Monitoring("监视中"),
     Recovering("恢复连接中"),
     NeedsRetry("等待手动重试"),
+    TakenOver("相机被其他设备接管"),
     Failed("连接失败"),
 }
 
@@ -78,6 +80,7 @@ data class ConnectionState(
     val phase: ConnectionPhase = ConnectionPhase.Idle,
     val message: String = "",
     val cameraVertical: Boolean = false,
+    val cameraPoseRotation: PictureRotation = PictureRotation.Upright,
     val pictureWidth: Int = 1280,
     val pictureHeight: Int = 720,
     val pictureReady: Boolean = false,

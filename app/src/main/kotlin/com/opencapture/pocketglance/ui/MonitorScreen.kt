@@ -16,10 +16,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -34,10 +37,14 @@ import com.opencapture.pocketglance.connection.ConnectionPhase
 import com.opencapture.pocketglance.connection.ConnectionState
 import com.opencapture.pocketglance.connection.PocketState
 import com.opencapture.pocketglance.connection.MonitorFocusLock
+import com.opencapture.pocketglance.monitor.PictureRotation
 
 @Composable
 fun MonitorScreen(
     connection: ConnectionState,
+    picturePortrait: Boolean,
+    rotationOverride: PictureRotation?,
+    onRotationChange: (PictureRotation?) -> Unit,
     startingFeed: Boolean,
     onUnlockFocus: () -> Unit,
     onStopTracking: () -> Unit,
@@ -54,6 +61,7 @@ fun MonitorScreen(
     val inkFaint = Color.White.copy(alpha = 0.45f)
     var lastCaptureCount by remember { mutableIntStateOf(chrome.photoCaptureCount) }
     val flashAnim = remember { Animatable(0f) }
+    var showRotation by remember { mutableStateOf(false) }
 
     LaunchedEffect(chrome.photoCaptureCount) {
         val captured = chrome.isPhoto && chrome.photoCaptureCount > lastCaptureCount
@@ -69,13 +77,14 @@ fun MonitorScreen(
                 Text("正在稳定直播画面…", color = inkSoft, fontSize = 14.sp)
             }
         }
-        if (connection.pocketState == PocketState.Recovering || connection.pocketState == PocketState.NeedsRetry) {
+        if (connection.pocketState == PocketState.Recovering || connection.pocketState == PocketState.NeedsRetry ||
+            connection.pocketState == PocketState.TakenOver) {
             Column(
                 modifier = Modifier.align(Alignment.Center).background(Color.Black.copy(alpha = 0.7f)).padding(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(connection.message, color = Color.White)
-                if (connection.pocketState == PocketState.NeedsRetry) {
+                if (connection.pocketState == PocketState.NeedsRetry || connection.pocketState == PocketState.TakenOver) {
                     TextButton(onClick = onRetryRecovery) { Text("重试连接", color = GlanceColors.pear) }
                 }
             }
@@ -161,11 +170,25 @@ fun MonitorScreen(
                     color = inkFaint,
                     fontSize = 12.sp,
                 )
-                Text(
-                    if (connection.cameraVertical) "竖" else "横",
-                    color = inkFaint,
-                    fontSize = 12.sp,
-                )
+                if (connection.pictureReady) {
+                    Box {
+                        TextButton(onClick = { showRotation = true }) {
+                            Text(if (picturePortrait) "竖向" else "横向", color = GlanceColors.pear, fontSize = 12.sp)
+                        }
+                        DropdownMenu(expanded = showRotation, onDismissRequest = { showRotation = false }) {
+                            (listOf<PictureRotation?>(null) + PictureRotation.entries).forEach { rotation ->
+                                val label = rotation?.label ?: "自动识别"
+                                DropdownMenuItem(
+                                    text = { Text(if (rotation == rotationOverride) "$label（当前）" else label) },
+                                    onClick = {
+                                        onRotationChange(rotation)
+                                        showRotation = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
             }
             if (chrome.isPhoto) {
                 Text(chrome.formatChip, color = inkSoft, fontSize = 12.sp)
@@ -212,7 +235,7 @@ fun MonitorScreen(
             TextButton(onClick = onSettings) {
                 Text("设置", color = Color.White.copy(alpha = 0.75f))
             }
-            TextButton(onClick = onGallery) {
+            TextButton(onClick = onGallery, enabled = !chrome.isRecording) {
                 Text("相册", color = GlanceColors.pear)
             }
         }

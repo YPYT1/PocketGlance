@@ -6,6 +6,8 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.Surface
 import com.opencapture.opencine.dji.PocketCameraSession
+import com.opencapture.opencine.dji.DjiAndroidMediaService
+import com.opencapture.opencine.media.CameraMediaService
 import com.opencapture.opencine.vocabulary.CameraStatus
 import com.opencapture.opencine.vocabulary.CameraCommands
 import com.opencapture.opencine.vocabulary.ConnectionPhase as DjiPhase
@@ -15,6 +17,7 @@ import com.opencapture.opencine.vocabulary.SessionRecoveryUi
 import com.opencapture.pocketglance.session.GlanceSessionHost
 import com.opencapture.pocketglance.session.SwiftCoreBootstrap
 import com.opencapture.pocketglance.ui.MonitorChromeLabels
+import com.opencapture.pocketglance.monitor.PictureRotation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
@@ -57,6 +60,10 @@ class WirelessSoftApTransport(
     private var lastDisconnectAtMs = 0L
     private var warmRetryAttempt = 0
     private var warmRetryJob: Job? = null
+    private var recoveryRetryJob: Job? = null
+    private var monitorForeground = true
+    private var cameraTarget = preferredCameraId
+    val hasRetryTarget: Boolean get() = cameraTarget != null
 
     override suspend fun connect() {
         if (!SwiftCoreBootstrap.isAvailable) {
@@ -107,6 +114,7 @@ class WirelessSoftApTransport(
                         existing.chromeStatus.value,
                         existing.recoveryState.value,
                         existing.decoder.pictureWidth to existing.decoder.pictureHeight,
+                        _state.value.cameraPoseRotation,
                     )
                 return
             }
@@ -119,6 +127,7 @@ class WirelessSoftApTransport(
     fun connectTo(cameraId: String) {
         val created = session ?: return
         val camera = created.found.value.firstOrNull { it.id == cameraId } ?: return
+        cameraTarget = camera.id
         autoConnectAttempted = true
         warmRetryJob?.cancel()
         created.connect(camera)
@@ -137,7 +146,26 @@ class WirelessSoftApTransport(
 
     override fun attachSurface(surface: Surface?) {
         pendingSurface = surface
-        session?.attachSurface(surface)
+        session?.let { current ->
+            if (surface == null) current.detachMonitorSurface()
+            else {
+                current.attachSurface(surface)
+                if (monitorForeground) current.restoreMonitorPictureIfNeeded()
+            }
+        }
+    }
+
+    fun setMonitorForeground(foreground: Boolean) {
+        if (monitorForeground == foreground) return
+        monitorForeground = foreground
+        val current = session ?: return
+        if (foreground) {
+            current.noteMonitorReturned()
+            if (pendingSurface?.isValid == true) current.restoreMonitorPictureIfNeeded()
+            if (_state.value.phase == ConnectionPhase.Failed) {
+                cameraTarget?.let(::scheduleWarmRetry)
+            }
+        }
     }
 
     override fun notePresented(sourceTimestampNs: Long) {
@@ -147,6 +175,12 @@ class WirelessSoftApTransport(
     fun retryRecovery() {
         val current = session ?: return
         if (current.recoveryState.value.requiresOperator()) current.retrySessionRecovery()
+    }
+
+    internal fun galleryService(): DjiAndroidMediaService? {
+        val current = session ?: return null
+        if (_state.value.pocketState != PocketState.Monitoring || current.status.value.isRecording || focusJob?.isActive == true) return null
+        return current.services.get<CameraMediaService>() as? DjiAndroidMediaService
     }
 
     fun focus(gesture: FocusGesture, x: Float, y: Float) {
@@ -244,14 +278,14 @@ class WirelessSoftApTransport(
                 phase = ConnectionPhase.Connecting,
                 message =
                     when {
-                        warmId != null && warmRetryAttempt > 0 ->
-                            "重连未成功，正在重试（${warmRetryAttempt + 1}/$MAX_WARM_RETRIES）…"
+                        warmId != null && warmRetryAttempt > 0 -> "正在重新连接 Pocket…"
                         warmId != null -> "正在快速重连上次的 Pocket…"
                         else -> "正在扫描 Pocket…"
                     },
                 pocketState = PocketState.Discovering,
             )
-        val created = PocketCameraSession(appContext, GlanceSessionHost(appContext))
+        val host = GlanceSessionHost(appContext)
+        val created = PocketCameraSession(appContext, host)
         val raster = MutableStateFlow(created.decoder.pictureWidth to created.decoder.pictureHeight)
         created.decoder.onPictureSizeObserved = { width, height -> raster.value = width to height }
         session = created
@@ -269,17 +303,24 @@ class WirelessSoftApTransport(
         observeJob =
             scope.launch {
                 combine(
-                    combine(created.decoder.isVerticalPicture, created.decoder.hasPicture, raster, ::PictureState),
+                    combine(created.decoder.hasPicture, raster, host.pictureRotation, ::PictureState),
                     created.phaseFlow, created.found, created.chromeStatus,
                     created.recoveryState,
                 ) { picture, phase, found, chrome, recovery ->
                     SessionState(picture, phase, found, chrome, recovery)
                 }.collectLatest { (picture, phase, found, chrome, recovery) ->
-                    val next = mapState(phase, picture.vertical, picture.ready, found, chrome, recovery, picture.raster)
+                    val next = mapState(phase, picture.raster.first < picture.raster.second, picture.ready, found, chrome, recovery,
+                        picture.raster, picture.rotation)
                     if (_state.value.pocketState != next.pocketState) {
                         Log.d(TAG, "camera phase=$phase state=${next.pocketState}")
                     }
                     _state.value = next
+                    if (recovery is SessionRecoveryUi.WaitingForOperator || recovery is SessionRecoveryUi.PausedAfterDrops) {
+                        scheduleRecoveryRetry(created)
+                    } else {
+                        recoveryRetryJob?.cancel()
+                        recoveryRetryJob = null
+                    }
                     val available = next.pocketState == PocketState.Monitoring && created.canUseMonitorFocus
                     if (_focus.value.available != available) {
                         _focus.update { it.copy(available = available, point = null, trackBox = null, notice = null) }
@@ -290,6 +331,7 @@ class WirelessSoftApTransport(
                         warmRetryJob = null
                         val id = created.connectedCamera?.id ?: found.firstOrNull()?.id
                         if (id != null && id != reportedLiveCamera) {
+                            cameraTarget = id
                             reportedLiveCamera = id
                             onCameraConnected(id)
                         }
@@ -300,10 +342,11 @@ class WirelessSoftApTransport(
                         warmId == null
                     ) {
                         autoConnectAttempted = true
+                        cameraTarget = found.first().id
                         created.connect(found.first())
                     }
-                    if (phase == DjiPhase.FAILED && warmId != null) {
-                        scheduleWarmRetry(warmId)
+                    if (phase == DjiPhase.FAILED) {
+                        (cameraTarget ?: warmId)?.let(::scheduleWarmRetry)
                     }
                 }
             }
@@ -318,12 +361,8 @@ class WirelessSoftApTransport(
 
     private fun scheduleWarmRetry(warmId: String) {
         if (warmRetryJob?.isActive == true) return
-        if (warmRetryAttempt + 1 >= MAX_WARM_RETRIES) {
-            Log.w(TAG, "warm reconnect exhausted after $MAX_WARM_RETRIES attempts")
-            return
-        }
-        warmRetryAttempt += 1
-        val waitMs = WARM_RETRY_BASE_MS * warmRetryAttempt
+        warmRetryAttempt = (warmRetryAttempt + 1).coerceAtMost(6)
+        val waitMs = (WARM_RETRY_BASE_MS shl (warmRetryAttempt - 1)).coerceAtMost(30_000)
         Log.i(TAG, "warm reconnect retry $warmRetryAttempt in ${waitMs}ms")
         warmRetryJob =
             scope.launch {
@@ -334,11 +373,26 @@ class WirelessSoftApTransport(
                         pocketState = PocketState.Discovering,
                     )
                 delay(waitMs)
+                warmRetryJob = null
                 beginSession(warmId, resetWarmRetries = false)
             }
     }
 
+    private fun scheduleRecoveryRetry(current: PocketCameraSession) {
+        if (recoveryRetryJob?.isActive == true) return
+        recoveryRetryJob = scope.launch {
+            delay(20_000)
+            recoveryRetryJob = null
+            if (session === current && (current.recoveryState.value is SessionRecoveryUi.WaitingForOperator ||
+                    current.recoveryState.value is SessionRecoveryUi.PausedAfterDrops)) {
+                current.retrySessionRecovery()
+            }
+        }
+    }
+
     private fun disconnectSession() {
+        recoveryRetryJob?.cancel()
+        recoveryRetryJob = null
         warmRetryJob?.cancel()
         warmRetryJob = null
         observeJob?.cancel()
@@ -362,6 +416,7 @@ class WirelessSoftApTransport(
         status: CameraStatus,
         recovery: SessionRecoveryUi,
         raster: Pair<Int, Int>,
+        rotation: PictureRotation,
     ): ConnectionState {
         val rows =
             found.map {
@@ -385,7 +440,7 @@ class WirelessSoftApTransport(
                 DjiPhase.OPENING_DATALINK -> ConnectionPhase.Connecting to "正在打开直播通道…"
                 DjiPhase.FAILED ->
                     ConnectionPhase.Failed to
-                        if (warmRetryAttempt + 1 < MAX_WARM_RETRIES && preferredCameraId != null) {
+                        if (cameraTarget != null) {
                             "连接未完成，即将自动重试…"
                         } else {
                             "连接失败。请确认已退出官方 Mimo，并靠近相机后重试。"
@@ -393,8 +448,8 @@ class WirelessSoftApTransport(
                 DjiPhase.LIVE -> ConnectionPhase.Live to when (recovery) {
                     is SessionRecoveryUi.Retrying -> "正在恢复连接（${recovery.attempt}/${recovery.maxAttempts}）…"
                     is SessionRecoveryUi.TakenOver -> "相机已被另一台设备连接。"
-                    is SessionRecoveryUi.PausedAfterDrops -> "连接反复中断，已暂停自动重试。"
-                    is SessionRecoveryUi.WaitingForOperator -> "自动恢复未成功，请重试。"
+                    is SessionRecoveryUi.PausedAfterDrops -> "连接反复中断，稍后会自动重连。"
+                    is SessionRecoveryUi.WaitingForOperator -> "暂未恢复，稍后会自动重连。"
                     SessionRecoveryUi.Idle -> "无线已连接"
                 }
             }
@@ -403,6 +458,7 @@ class WirelessSoftApTransport(
             phase = glancePhase,
             message = message,
             cameraVertical = cameraVertical,
+            cameraPoseRotation = rotation,
             pictureWidth = raster.first,
             pictureHeight = raster.second,
             pictureReady = pictureReady,
@@ -412,7 +468,7 @@ class WirelessSoftApTransport(
         )
     }
 
-    private data class PictureState(val vertical: Boolean, val ready: Boolean, val raster: Pair<Int, Int>)
+    private data class PictureState(val ready: Boolean, val raster: Pair<Int, Int>, val rotation: PictureRotation)
 
     private data class SessionState(
         val picture: PictureState,
@@ -425,12 +481,12 @@ class WirelessSoftApTransport(
     companion object {
         private const val TAG = "PocketGlance"
         private const val DISCONNECT_QUIET_MS = 900L
-        private const val MAX_WARM_RETRIES = 3
         private const val WARM_RETRY_BASE_MS = 1200L
     }
 }
 
 internal fun pocketStateFor(phase: DjiPhase, pictureReady: Boolean, recovery: SessionRecoveryUi): PocketState {
+    if (phase == DjiPhase.LIVE && recovery is SessionRecoveryUi.TakenOver) return PocketState.TakenOver
     if (phase == DjiPhase.LIVE && recovery.isReconnecting) return PocketState.Recovering
     if (phase == DjiPhase.LIVE && recovery.requiresOperator()) return PocketState.NeedsRetry
     return when (phase) {

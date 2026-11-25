@@ -85,7 +85,7 @@ android {
 }
 
 androidComponents.onVariants { variant ->
-    if (suppliedLutPack.isDirectory) variant.sources.assets?.addGeneratedSourceDirectory(packPreviewLuts, PackPreviewLuts::output)
+    variant.sources.assets?.addGeneratedSourceDirectory(packPreviewLuts, PackPreviewLuts::output)
 }
 
 dependencies {
@@ -97,6 +97,8 @@ dependencies {
     implementation("com.opencapture.opencine:platform:0.1.0-SNAPSHOT")
     implementation("com.opencapture.opencine:native-runtime:0.1.0-SNAPSHOT")
     implementation("com.opencapture.opencine:appkit:0.1.0-SNAPSHOT")
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.ui)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.androidx.activity.compose)

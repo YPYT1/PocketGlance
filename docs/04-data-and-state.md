@@ -10,6 +10,7 @@
 | `phase` | `ConnectionPhase` | Idle / Connecting / Live / Failed |
 | `message` | `String` | 状态/错误中文 |
 | `cameraVertical` | `Boolean` | 解码器判定竖拍画面 |
+| `cameraPoseRotation` | `PictureRotation` | 从相机姿态重力投影稳定判定的预览校正角度 |
 | `pictureReady` | `Boolean` | 当前解码会话曾呈现首帧，不代表此刻仍有新帧 |
 | `pocketState` | `PocketState` | 唤醒、连接及恢复进度，不是独立电源遥测 |
 | `foundCameras` | `List<FoundCameraRow>` | 扫描到的相机（无线） |
@@ -32,14 +33,12 @@
 
 ### 相册状态
 
-- `_gallery`：当前为样片列表  
-- `_galleryFilter: MediaKind?`  
-- `filteredGallery`：combine 派生  
+`GlanceGallery` 持有当前相机的浏览会话和分页游标。照片和视频按来源存储筛选，退出时释放浏览会话并恢复直播。
 
 ### UI 瞬时状态（`GlanceRoot`）
 
 - `pendingWireless`：等权限后再连  
-- `didAutoOpenMonitor`：本连接周期是否已自动进监视  
+- `openRequest`：应用恢复或收到新的打开请求时，检查当前会话并进入监视页。
 
 ---
 
@@ -60,8 +59,9 @@
 `NavHost` start = `home`。  
 路由与业务相位耦合：
 
-- `phase → Live` 且 `!didAutoOpenMonitor` → 进 `monitor`  
-- Live 时启用窗口传感器方向；非 Live 时手机首页仍为竖屏，平板跟随系统方向。宽屏平板首页双栏，手机仍为单栏。`Idle` / `Failed` 时重置 `didAutoOpenMonitor`。
+- 首次进入 Live，或已连接时重新打开应用，直接进入 `monitor`，不重新连接相机。监视页的系统返回手势将应用退到后台；仍可通过底部「连接」主动查看连接页。
+- 已连接时，连接首页、设置、相册和 LUT 选择器的左上角均可直接返回同一个监视会话；未连接时，设置返回连接首页。
+- Live 监视页在画面是竖向时请求正向竖屏，其余 Live 页面跟随传感器。非 Live 时手机首页仍为竖屏，平板跟随系统方向。宽屏平板首页双栏，手机仍为单栏。`Idle` / `Failed` 时重置手动旋转。
 
 ---
 
@@ -80,12 +80,12 @@ LiveFeedHost (remember heldSurface[0])
 
 拍照 HUD 从 `cam_photo_param`（以及带版本前缀的 `cam_photo_param_new`）读取画质、比例、设定延时和实时剩余秒数；动图状态从相机报告的拍摄模式判定。未收到的参数显示 `—`，与相机明确报告的「倒计时关」区分。
 
-支持对焦的 Pocket 直播：画面单击发起对焦，双击发起 ActiveTrack，静止长按 1.5 秒尝试锁焦。坐标会按直播裁切和旋转换算；以相机回复为准，不将未确认的锁定显示成成功。单击其他位置、双击追踪或按「点此解锁」会先尝试解除本次锁定。
+支持对焦的 Pocket 直播：画面单击发起对焦，双击发起 ActiveTrack，静止长按 1.5 秒尝试锁焦。坐标按直播裁切和旋转换算；机身拒绝 AF 锁定时，用支持的单次对焦保持作为备选，并用不同文案标明。单击、双击或按解除按钮会先尝试解除本次保持。
 
 首帧后短暂显示「正在稳定直播画面」，码流和解码继续运行。这只避开刚接通时的低码率画面，不会改变无线链路或提高相机输出的分辨率。
 
 ---
 
-## 样片相册数据
+## 相机相册数据
 
-`GlanceModel.sampleGallery()` 固定 6 条，用于验证分类与 UI；**不是相机媒体列表**。真相册需将来接 OpenCine `CameraMediaService` 等（本仓 Host 未暴露媒体浏览）。
+相册使用 OpenCine `CameraMediaService` 查询两个存储。文件标识包含存储来源；缩略图、原图和视频仅从该来源读取，不以另一存储中同名文件替代。

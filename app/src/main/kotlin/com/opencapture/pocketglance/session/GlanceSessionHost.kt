@@ -1,12 +1,15 @@
 package com.opencapture.pocketglance.session
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import com.opencapture.opencine.dji.DumlFrame
 import com.opencapture.opencine.dji.FaceDetectorPort
 import com.opencapture.opencine.dji.FaceFrame
 import com.opencapture.opencine.dji.PocketSessionHost
 import com.opencapture.opencine.dji.StatusExtras
+import com.opencapture.opencine.dji.AttitudeLayout
+import com.opencapture.opencine.dji.attitude
 import com.opencapture.opencine.media.FeedIncidentBreadcrumb
 import com.opencapture.opencine.media.FeedIncidentRecorder
 import com.opencapture.opencine.media.FeedIncidentSessionContext
@@ -15,12 +18,20 @@ import com.opencapture.opencine.media.FeedIncidentSnapshot
 import com.opencapture.opencine.media.FeedIncidentTestSource
 import com.opencapture.opencine.media.FeedRepairRecord
 import com.opencapture.opencine.vocabulary.TrackingBox
+import com.opencapture.opencine.motion.WorldLevel
 import com.opencapture.pocketglance.BuildConfig
+import com.opencapture.pocketglance.monitor.PictureRotation
+import com.opencapture.pocketglance.monitor.PocketPicturePose
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /** Minimal host: no operator shutter prefs, no face AF, local incident ring only. */
 class GlanceSessionHost(context: Context) : PocketSessionHost {
     private val appContext = context.applicationContext
     private val recorder = FeedIncidentRecorder()
+    private val pose = PocketPicturePose()
+    private val _pictureRotation = MutableStateFlow(PictureRotation.Upright)
+    val pictureRotation = _pictureRotation.asStateFlow()
     private val sink =
         object : FeedIncidentSink {
             override fun beginSession(context: FeedIncidentSessionContext) {
@@ -78,6 +89,11 @@ class GlanceSessionHost(context: Context) : PocketSessionHost {
     private val lastCameraReports = mutableMapOf<String, String>()
 
     override fun observeCameraFrame(frame: DumlFrame) {
+        if (frame.key == 0x0405 && AttitudeLayout.of(frame.payload) != null) {
+            WorldLevel.attitude(frame.payload)?.let {
+                _pictureRotation.value = pose.observe(WorldLevel.gravity(it), SystemClock.elapsedRealtime())
+            }
+        }
         if (!debugBuild) return
         if (frame.key in FOCUS_REPLIES && frame.flags and 0x80 != 0) {
             val reply = frame.payload.firstOrNull()?.toInt()?.and(0xFF)

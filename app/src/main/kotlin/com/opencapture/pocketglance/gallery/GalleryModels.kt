@@ -1,16 +1,55 @@
 package com.opencapture.pocketglance.gallery
 
+import com.opencapture.opencine.media.MediaAssetKind
+import com.opencapture.opencine.vocabulary.MediaFile
+import com.opencapture.opencine.vocabulary.MediaHTTP
+import com.opencapture.opencine.vocabulary.MediaListCommand
+
 enum class MediaKind {
     Image,
     Video,
     Motion,
 }
 
-data class GalleryItem(
+enum class GalleryStorage(val label: String) {
+    Internal("机身内存"),
+    Card("存储卡"),
+}
+
+internal data class GalleryItem(
     val id: String,
     val title: String,
     val kind: MediaKind,
-    val thumbHint: String = "",
+    val storage: GalleryStorage,
+    val file: MediaFile,
+) {
+    fun url(path: String): String = MediaHTTP.pathUrlString(
+        if (storage == GalleryStorage.Internal) MediaListCommand.INTERNAL_STORAGE else MediaListCommand.SD_STORAGE,
+        android.net.Uri.encode(path, "/"),
+    )
+
+    companion object {
+        fun from(id: String, file: MediaFile, kind: MediaAssetKind?): GalleryItem? {
+            val type = when (kind) {
+                MediaAssetKind.VIDEO -> MediaKind.Video
+                MediaAssetKind.PHOTO -> MediaKind.Image
+                null -> return null
+            }
+            val storage = when (MediaListCommand.storeOf(file)) {
+                MediaListCommand.INTERNAL_STORAGE -> GalleryStorage.Internal
+                MediaListCommand.SD_STORAGE -> GalleryStorage.Card
+                else -> return null
+            }
+            return GalleryItem(id, file.filename, type, storage, file)
+        }
+    }
+}
+
+internal data class GalleryState(
+    val items: List<GalleryItem> = emptyList(),
+    val loading: Boolean = false,
+    val hasMore: Boolean = false,
+    val message: String? = null,
 )
 
 object MediaKindClassifier {
