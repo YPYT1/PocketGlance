@@ -51,10 +51,18 @@
 
 ### `WiredUsbTransport`
 
-- OTG **主机**：枚举 VID `0x2CA3` 等 DJI 设备，权限后 `openDevice`，声明厂商 Bulk
-- **AOA 附件**：枚举／打开 `UsbAccessory`，持有 `ParcelFileDescriptor`
-- 成功则 **Live**（无画面）；拔线 Failed；插入可由 Manifest 拉起 `connectWired`
-- `attachSurface` 为空操作（码流未接）
+- 只识别带 UVC Video 接口（class `0x0E`）的 Pocket 设备；不声明厂商 Bulk、不碰 MSC/RNDIS/AOA
+- 枚举 `LENS_FACING_EXTERNAL` 摄像头，选 ≤1920×1080 的稳定预览尺寸（优先 16:9）
+- Camera2 打开并把预览帧直出到 `UvcFeedHost` 的 Surface；会话配置完成才 Live，收到帧才 pictureReady
+- 拔线（`USB_DEVICE_DETACHED` / Camera2 `onDisconnected`）关闭会话；插入可由 Manifest 拉起 `connectWired`
+
+### `UvcSelection`
+
+纯函数：`UvcSize` + `selectResolution`（≤1080p、优先 16:9）、`hasVideoInterface`（class `0x0E` 判定）；供 JVM 单测。
+
+### `UvcCameraController`
+
+Camera2 外接摄像头控制器：枚举 external cameraId、读稳定尺寸、`openCamera` + `createCaptureSession`、把预览帧写 Surface。
 
 ### `GlancePrefs`（DataStore）
 
@@ -124,7 +132,8 @@
 | `MonitorScreen` | 监视 HUD（模式/清晰度/录制等）；可进设置 |
 | `MonitorChromeLabels` | CameraStatus → 中文 HUD 芯片 |
 | `GalleryScreen` | 过滤网格 + 简单预览 Dialog |
-| `LiveFeedHost` | TextureView + Surface 生命周期 + 变换矩阵 |
+| `LiveFeedHost` | 无线 TextureView + Surface 生命周期 + 变换矩阵 |
+| `UvcFeedHost` | 有线 UVC 直出 TextureView（绕开 GPU 效果/LUT） |
 | `LivePerformance` | 常亮与高刷 |
 
 ---
@@ -149,5 +158,6 @@ OpenCine 里还有大量 PocketGlance **未使用**的能力（云台、多机�
 
 - `MediaKindClassifierTest`
 - `MonitorLayoutTest`
+- `UvcSelectionTest`
 
 无仪器化 UI 测试目录内容（仅 runner 配置）。

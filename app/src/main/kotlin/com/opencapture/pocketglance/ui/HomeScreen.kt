@@ -136,7 +136,7 @@ fun HomeScreen(
                     )
                     ConnectTile(
                         title = "有线连接",
-                        subtitle = "OTG 主机或 USB 附件直连 Pocket",
+                        subtitle = "Pocket 选择「网络摄像头」(2秒)，再用 USB/OTG 连接",
                         accent = GlanceColors.azure,
                         icon = Icons.Default.Cable,
                         onClick = onConnectWired,

@@ -12,14 +12,14 @@
 - DataStore 偏好读写（启动默认 / 上次模式 / 相机 id）
 - 相机相册：机身内存／存储卡、分日期浏览、照片和视频预览、确认后删除并立即从列表移除
 - 直播常亮与高刷尝试
-- 有线基础会话：OTG 主机（VID/厂商 Bulk）与 AOA 附件打开、权限、拔线；USB 插入拉起
+- 有线 UVC 实时预览：Camera2 external camera + TextureView 直出真实帧、权限按需申请、拔线关闭会话；前提是 OEM 提供外接 Camera HAL/provider
 - unit test：分类器、MonitorLayout
 
 ## 占位 / 部分完成
 
 | 项 | 现状 | 建议方向 |
 | --- | --- | --- |
-| 有线直播码流 | 会话 Live，无 HEVC／DUML | 解析 Bulk 或 RNDIS，接入现有 decoder Surface（见 docs/09） |
+| 有线 UVC 兼容性 | Camera2 HAL 是 OEM 可选，当前无 Android 平板实机验证 | 在目标平板接入 Pocket UVC 模式实测权限、cameraId、Surface 帧与拔线清理 |
 | 冷启动自动连接 | 偏好可存，无启动副作用 | 在 `GlanceRoot` 用 `resolveStartupMode` + 权限门 |
 
 ## 明确不做（当前产品范围）

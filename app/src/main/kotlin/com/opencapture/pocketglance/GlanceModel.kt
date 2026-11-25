@@ -183,7 +183,16 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
         connect(mode, seedDevice = null, seedAccessory = null)
     }
 
-    /** USB 插入时由 Activity 带上设备／附件种子，走有线基础会话。 */
+    fun reportWiredPermissionDenied() {
+        _connection.value = ConnectionState(
+            mode = ConnectionMode.Wired,
+            phase = ConnectionPhase.Failed,
+            message = "未授予相机权限，无法打开外接 UVC 摄像头。请在系统设置允许相机权限后重试。",
+            pocketState = PocketState.Failed,
+        )
+    }
+
+    /** USB 插入时由 Activity 带上设备／附件种子，走有线 UVC 会话。 */
     fun connectWired(device: UsbDevice? = null, accessory: UsbAccessory? = null) {
         connect(ConnectionMode.Wired, seedDevice = device, seedAccessory = accessory)
     }

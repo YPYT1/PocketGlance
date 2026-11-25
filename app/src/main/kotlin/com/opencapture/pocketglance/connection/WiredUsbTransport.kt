@@ -1,34 +1,42 @@
 package com.opencapture.pocketglance.connection
 
-import android.app.PendingIntent
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.hardware.usb.UsbConstants
-import android.hardware.usb.UsbDevice
-import android.hardware.usb.UsbDeviceConnection
-import android.hardware.usb.UsbInterface
-import android.hardware.usb.UsbManager
+import android.content.pm.PackageManager
 import android.hardware.usb.UsbAccessory
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbManager
 import android.os.Build
-import android.os.ParcelFileDescriptor
+import android.util.Size
 import android.view.Surface
+import androidx.core.content.ContextCompat
 import com.opencapture.pocketglance.diagnostics.GlanceLog
-import kotlinx.coroutines.CompletableDeferred
+import com.opencapture.pocketglance.monitor.PictureRotation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.delay
 
 /**
- * Pocket 有线基础会话：OTG 主机（VID 0x2CA3 复合设备）或 AOA 附件。
- * 打开并持有连接／厂商 Bulk；直播码流尚未接入，但会话进入 Live 以便共用监视壳。
+ * 有线「网络摄像头／UVC」会话：Pocket 4P 切到 UVC 模式后，机身作为标准 USB Video
+ * Class 设备，Android 经 Camera HAL 暴露为外部摄像头（LENS_FACING_EXTERNAL）。
+ *
+ * 本 Transport **不**声明厂商 Bulk、不碰 MSC/RNDIS、不发送任何 USB 模式切换控制传输。
+ * 它只做三件事：
+ * 1. 只识别带 Video 接口（class 0x0E）的 Pocket 设备；
+ * 2. 枚举外部摄像头并选一个稳定预览分辨率；
+ * 3. 用 Camera2 打开并把预览帧直接输出到监视器 TextureView 的 Surface。
+ *
+ * 之前的「基础会话」（打开厂商 Bulk／AOA 附件后直接进 Live、但无画面）是假预览，
+ * 已移除。直播码流仍不经过 DJI 私有 Bulk 协议。
  */
 class WiredUsbTransport(
     context: Context,
     private val seedDevice: UsbDevice? = null,
-    private val seedAccessory: UsbAccessory? = null,
+    @Suppress("unused") private val seedAccessory: UsbAccessory? = null,
 ) : ConnectionTransport {
     override val mode: ConnectionMode = ConnectionMode.Wired
 
@@ -37,14 +45,13 @@ class WiredUsbTransport(
     private val _state = MutableStateFlow(ConnectionState(mode = mode))
     override val state: StateFlow<ConnectionState> = _state.asStateFlow()
 
-    private var deviceConnection: UsbDeviceConnection? = null
-    private var claimedInterfaces: List<UsbInterface> = emptyList()
+    private var controller: UvcCameraController? = null
+    private var pendingSurface: Surface? = null
     private var boundDevice: UsbDevice? = null
-    private var accessoryFd: ParcelFileDescriptor? = null
-    private var boundAccessory: UsbAccessory? = null
-    private var permissionReceiver: BroadcastReceiver? = null
     private var detachReceiver: BroadcastReceiver? = null
     private var closed = false
+    private var pictureWidth = 1280
+    private var pictureHeight = 720
 
     override suspend fun connect() {
         if (closed) return
@@ -52,113 +59,137 @@ class WiredUsbTransport(
         logUsbInventory()
         emit(
             phase = ConnectionPhase.Connecting,
-            message = "正在查找 USB 设备…",
+            message = "正在查找 USB 摄像头…",
             pocket = PocketState.Discovering,
         )
         registerDetachWatcher()
 
-        val accessory = seedAccessory?.takeIf { isPocketAccessory(it) } ?: findAccessory()
-        if (accessory != null) {
-            GlanceLog.i("wired", "try accessory ${accessory.manufacturer} ${accessory.model}")
-            if (!ensureAccessoryPermission(accessory)) {
-                fail("未获得 USB 附件权限。请在系统弹窗中允许后重试。")
-                return
+        var device = seedDevice?.takeIf { isPocketUvcDevice(it) } ?: findUvcDevice()
+        if (device == null) {
+            // Pocket shows a mode picker after plugging in; its UVC interface can appear shortly after selection.
+            for (i in 0 until 8) {
+                if (closed) return
+                delay(500)
+                device = findUvcDevice()
+                if (device != null) break
             }
-            if (openAccessorySession(accessory)) return
         }
-
-        val device = seedDevice?.takeIf { isPocketDevice(it) } ?: findDevice()
-        if (device != null) {
-            GlanceLog.i("wired", "try host ${deviceLabel(device)}")
-            if (!ensureDevicePermission(device)) {
-                fail("未获得 USB 设备权限。请在系统弹窗中允许后重试。")
-                return
-            }
-            if (openHostSession(device)) return
+        if (device == null) {
+            fail(
+                "未检测到 Pocket 的网络摄像头。请在 Pocket 选择「网络摄像头」(2秒)，" +
+                    "再用 USB/OTG 连接本机；选择「文件传输」不会提供 UVC 画面。",
+            )
+            return
         }
-
-        fail(
-            "未检测到 Pocket USB。" +
-                "请用 OTG 线接到本机（主机模式），或让相机以附件模式连接；" +
-                "电脑上的「文件传输」挂载与手机监视不是同一条路径。",
+        val uvcDevice = device ?: return
+        boundDevice = uvcDevice
+        logInterfaces(uvcDevice)
+        GlanceLog.i("wired", "uvc device ${deviceLabel(uvcDevice)}")
+        emit(
+            phase = ConnectionPhase.Connecting,
+            message = "已识别 Pocket UVC 摄像头，正在打开…",
+            pocket = PocketState.OpeningLink,
         )
+
+        if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.CAMERA) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            fail("缺少摄像头权限，无法预览外接摄像头。请授予相机权限后重试。")
+            return
+        }
+
+        val created = UvcCameraController(
+            appContext,
+            onConfigured = ::onUvcConfigured,
+            onDisconnected = ::onUvcDisconnected,
+            onError = ::fail,
+        )
+        controller = created
+
+        var externalIds = created.externalCameraIds()
+        repeat(8) {
+            if (closed || externalIds.isNotEmpty()) return@repeat
+            if (it == 7) return@repeat
+            delay(500)
+            externalIds = created.externalCameraIds()
+        }
+        GlanceLog.i("wired", "external cameras=${externalIds.size} ids=$externalIds")
+        if (externalIds.isEmpty()) {
+            fail("没有可用的外接 UVC 摄像头。请在 Pocket 选择「网络摄像头」(2秒)；若仍未出现，当前平板系统可能没有外接摄像头 Camera HAL。")
+            return
+        }
+
+        // 无公开 API 把 Camera2 摄像头 id 映射回 USB 设备；单台 Pocket 场景取首个外部摄像头即可。
+        val cameraId = externalIds.first()
+        val sizes = created.supportedSizes(cameraId).map { UvcSize(it.width, it.height) }
+        val selected = UvcSelection.selectResolution(sizes)
+        if (selected == null) {
+            fail("外接摄像头未提供可用的预览分辨率。")
+            return
+        }
+        pictureWidth = selected.width
+        pictureHeight = selected.height
+        GlanceLog.i(
+            "wired",
+            "external camera=$cameraId reportedSizes=${sizes.size} selected=${selected.width}x${selected.height}",
+        )
+        emit(
+            phase = ConnectionPhase.Connecting,
+            message = "正在配置外接摄像头 ${selected.width}×${selected.height}…",
+            pocket = PocketState.OpeningLink,
+        )
+
+        // 预览帧已确定画幅；监视器据此提前准备 TextureView 变换。
+        pendingSurface?.let(created::attachSurface)
+        val opened = created.open(cameraId, Size(selected.width, selected.height))
+        if (!opened) {
+            if (!closed) fail("无法打开外接摄像头。")
+            return
+        }
+        // Live 在 onConfigured（Camera2 会话配置完成）时切换，不在此处提前声称已出图。
     }
 
     override suspend fun disconnect() {
         tearDown(IdleReason.User)
     }
 
-    override fun attachSurface(surface: Surface?) = Unit
-
-    private fun findAccessory(): UsbAccessory? =
-        usb.accessoryList?.firstOrNull { isPocketAccessory(it) }
-
-    private fun findDevice(): UsbDevice? =
-        usb.deviceList?.values?.firstOrNull { isPocketDevice(it) }
-
-    private fun openAccessorySession(accessory: UsbAccessory): Boolean {
-        val fd = runCatching { usb.openAccessory(accessory) }.getOrNull()
-        if (fd == null) {
-            GlanceLog.e("wired", "openAccessory failed ${accessory.model}")
-            fail("无法打开 USB 附件 ${accessory.model}。")
-            return true
-        }
-        accessoryFd = fd
-        boundAccessory = accessory
-        GlanceLog.i("wired", "accessory session open fd=${fd.fd}")
-        emit(
-            phase = ConnectionPhase.Live,
-            message = "有线附件会话已建立（${accessory.manufacturer} ${accessory.model}）。直播码流尚未接入。",
-            pocket = PocketState.Monitoring,
-            cameraTitle = "${accessory.manufacturer} ${accessory.model}",
-        )
-        return true
+    override fun attachSurface(surface: Surface?) {
+        pendingSurface = surface
+        controller?.attachSurface(surface)
     }
 
-    private fun openHostSession(device: UsbDevice): Boolean {
-        val connection = runCatching { usb.openDevice(device) }.getOrNull()
-        if (connection == null) {
-            GlanceLog.e("wired", "openDevice failed ${deviceLabel(device)}")
-            fail("无法打开 USB 设备 ${deviceLabel(device)}。")
-            return true
-        }
-        val claimed = ArrayList<UsbInterface>()
-        for (index in 0 until device.interfaceCount) {
-            val intf = device.getInterface(index)
-            GlanceLog.d(
-                "wired",
-                "iface[$index] class=${intf.interfaceClass} sub=${intf.interfaceSubclass} " +
-                    "proto=${intf.interfaceProtocol} eps=${intf.endpointCount}",
+    override fun notePresented(sourceTimestampNs: Long) {
+        if (_state.value.phase != ConnectionPhase.Live || _state.value.pictureReady) return
+        _state.value = _state.value.copy(pictureReady = true)
+    }
+
+    private fun onUvcConfigured() {
+        if (closed) return
+        GlanceLog.i("wired", "uvc session configured → Live ${pictureWidth}x$pictureHeight")
+        _state.value =
+            ConnectionState(
+                mode = mode,
+                phase = ConnectionPhase.Live,
+                message = "有线 UVC 摄像头已连接",
+                cameraVertical = false,
+                cameraPoseRotation = PictureRotation.Upright,
+                pictureWidth = pictureWidth,
+                pictureHeight = pictureHeight,
+                sourceWidth = pictureWidth,
+                sourceHeight = pictureHeight,
+                pictureReady = false,
+                pocketState = PocketState.Monitoring,
+                foundCameras = listOf(FoundCameraRow(id = "wired-uvc", title = "Pocket UVC 摄像头")),
             )
-            for (ep in 0 until intf.endpointCount) {
-                val endpoint = intf.getEndpoint(ep)
-                GlanceLog.d(
-                    "wired",
-                    "  ep[$ep] addr=0x${endpoint.address.toString(16)} type=${endpoint.type} " +
-                        "dir=${endpoint.direction} max=${endpoint.maxPacketSize}",
-                )
-            }
-            // 只声明厂商 Bulk（Mac 上 IF 3–7：class 255 / sub 67），避开 MSC／RNDIS 系统占用。
-            if (intf.interfaceClass != UsbConstants.USB_CLASS_VENDOR_SPEC) continue
-            val ok = connection.claimInterface(intf, true)
-            GlanceLog.i("wired", "claim vendor iface[$index] -> $ok")
-            if (ok) claimed += intf
-        }
-        deviceConnection = connection
-        claimedInterfaces = claimed
-        boundDevice = device
-        val title = deviceLabel(device)
-        GlanceLog.i("wired", "host session open claimed=${claimed.size}/${device.interfaceCount} $title")
-        emit(
-            phase = ConnectionPhase.Live,
-            message =
-                "有线主机会话已建立（$title，厂商接口 ${claimed.size}/${device.interfaceCount}）。" +
-                    "直播码流尚未接入。",
-            pocket = PocketState.Monitoring,
-            cameraTitle = title,
-        )
-        return true
     }
+
+    private fun onUvcDisconnected() {
+        GlanceLog.i("wired", "uvc camera disconnected")
+        tearDown(IdleReason.Detached)
+    }
+
+    private fun findUvcDevice(): UsbDevice? =
+        usb.deviceList?.values?.firstOrNull { isPocketUvcDevice(it) }
 
     private fun logUsbInventory() {
         val accessories = usb.accessoryList?.toList().orEmpty()
@@ -172,58 +203,20 @@ class WiredUsbTransport(
             GlanceLog.i(
                 "wired",
                 "  device ${deviceLabel(device)} ifaces=${device.interfaceCount} " +
-                    "pocket=${isPocketDevice(device)}",
+                    "pocket=${isPocketDevice(device)} uvc=${hasVideoInterface(device)}",
             )
         }
     }
 
-    private suspend fun ensureDevicePermission(device: UsbDevice): Boolean {
-        if (usb.hasPermission(device)) return true
-        return requestPermission(device = device, accessory = null)
-    }
-
-    private suspend fun ensureAccessoryPermission(accessory: UsbAccessory): Boolean {
-        if (usb.hasPermission(accessory)) return true
-        return requestPermission(device = null, accessory = accessory)
-    }
-
-    private suspend fun requestPermission(device: UsbDevice?, accessory: UsbAccessory?): Boolean {
-        val deferred = CompletableDeferred<Boolean>()
-        val filter = IntentFilter(ACTION_USB_PERMISSION)
-        val receiver =
-            object : BroadcastReceiver() {
-                override fun onReceive(context: Context?, intent: Intent?) {
-                    if (intent?.action != ACTION_USB_PERMISSION) return
-                    val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
-                    if (!deferred.isCompleted) deferred.complete(granted)
-                }
-            }
-        permissionReceiver = receiver
-        registerReceiver(receiver, filter)
-        val piFlags =
-            PendingIntent.FLAG_UPDATE_CURRENT or
-                if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
-        val pi =
-            PendingIntent.getBroadcast(
-                appContext,
-                0,
-                Intent(ACTION_USB_PERMISSION).setPackage(appContext.packageName),
-                piFlags,
+    private fun logInterfaces(device: UsbDevice) {
+        for (index in 0 until device.interfaceCount) {
+            val intf = device.getInterface(index)
+            GlanceLog.d(
+                "wired",
+                "iface[$index] class=0x${intf.interfaceClass.toString(16)} sub=0x${intf.interfaceSubclass.toString(16)} " +
+                    "proto=0x${intf.interfaceProtocol.toString(16)} eps=${intf.endpointCount}",
             )
-        emit(
-            phase = ConnectionPhase.Connecting,
-            message = "等待 USB 权限…",
-            pocket = PocketState.Pairing,
-        )
-        when {
-            device != null -> usb.requestPermission(device, pi)
-            accessory != null -> usb.requestPermission(accessory, pi)
-            else -> return false
         }
-        val granted =
-            withTimeoutOrNull(45_000) { deferred.await() } == true
-        unregisterPermission()
-        return granted && !closed
     }
 
     private fun registerDetachWatcher() {
@@ -231,52 +224,26 @@ class WiredUsbTransport(
         val receiver =
             object : BroadcastReceiver() {
                 override fun onReceive(context: Context?, intent: Intent?) {
-                    when (intent?.action) {
-                        UsbManager.ACTION_USB_DEVICE_DETACHED -> {
-                            val device =
-                                intent.parcelableExtraCompat<UsbDevice>(UsbManager.EXTRA_DEVICE)
-                            if (device != null && boundDevice?.deviceId == device.deviceId) {
-                                tearDown(IdleReason.Detached)
-                            }
-                        }
-                        UsbManager.ACTION_USB_ACCESSORY_DETACHED -> {
-                            val accessory =
-                                intent.parcelableExtraCompat<UsbAccessory>(UsbManager.EXTRA_ACCESSORY)
-                            if (accessory != null && boundAccessory != null &&
-                                accessory.manufacturer == boundAccessory?.manufacturer &&
-                                accessory.model == boundAccessory?.model
-                            ) {
-                                tearDown(IdleReason.Detached)
-                            }
-                        }
+                    if (intent?.action != UsbManager.ACTION_USB_DEVICE_DETACHED) return
+                    val device = intent.parcelableExtraCompat<UsbDevice>(UsbManager.EXTRA_DEVICE)
+                    if (device != null && boundDevice?.deviceId == device.deviceId) {
+                        tearDown(IdleReason.Detached)
                     }
                 }
             }
         detachReceiver = receiver
-        val filter =
-            IntentFilter().apply {
-                addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
-                addAction(UsbManager.ACTION_USB_ACCESSORY_DETACHED)
-            }
-        registerReceiver(receiver, filter)
+        registerReceiver(receiver, IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED))
     }
 
     private fun tearDown(reason: IdleReason) {
+        if (closed) return
         closed = true
-        unregisterPermission()
+        controller?.close()
+        controller = null
+        pendingSurface = null
         detachReceiver?.let { runCatching { appContext.unregisterReceiver(it) } }
         detachReceiver = null
-        val connection = deviceConnection
-        deviceConnection = null
-        for (intf in claimedInterfaces) {
-            runCatching { connection?.releaseInterface(intf) }
-        }
-        claimedInterfaces = emptyList()
-        runCatching { connection?.close() }
         boundDevice = null
-        runCatching { accessoryFd?.close() }
-        accessoryFd = null
-        boundAccessory = null
         _state.value =
             when (reason) {
                 IdleReason.User -> ConnectionState(mode = mode, phase = ConnectionPhase.Idle)
@@ -284,7 +251,7 @@ class WiredUsbTransport(
                     ConnectionState(
                         mode = mode,
                         phase = ConnectionPhase.Failed,
-                        message = "USB 已断开。",
+                        message = "USB 摄像头已断开。",
                         pocketState = PocketState.Failed,
                     )
             }
@@ -292,7 +259,8 @@ class WiredUsbTransport(
 
     private fun fail(message: String) {
         GlanceLog.w("wired", "fail: $message")
-        unregisterPermission()
+        controller?.close()
+        controller = null
         _state.value =
             ConnectionState(
                 mode = mode,
@@ -306,22 +274,20 @@ class WiredUsbTransport(
         phase: ConnectionPhase,
         message: String,
         pocket: PocketState,
-        cameraTitle: String? = null,
     ) {
         _state.value =
             ConnectionState(
                 mode = mode,
                 phase = phase,
                 message = message,
+                cameraVertical = false,
+                cameraPoseRotation = PictureRotation.Upright,
+                pictureWidth = pictureWidth,
+                pictureHeight = pictureHeight,
+                sourceWidth = pictureWidth,
+                sourceHeight = pictureHeight,
                 pocketState = pocket,
-                foundCameras =
-                    cameraTitle?.let { listOf(FoundCameraRow(id = "wired", title = it)) }.orEmpty(),
             )
-    }
-
-    private fun unregisterPermission() {
-        permissionReceiver?.let { runCatching { appContext.unregisterReceiver(it) } }
-        permissionReceiver = null
     }
 
     private fun registerReceiver(receiver: BroadcastReceiver, filter: IntentFilter) {
@@ -336,7 +302,6 @@ class WiredUsbTransport(
     private enum class IdleReason { User, Detached }
 
     companion object {
-        const val ACTION_USB_PERMISSION = "com.opencapture.pocketglance.USB_PERMISSION"
         /** DJI vendor id observed on Pocket 4P host composite. */
         const val DJI_VENDOR_ID = 0x2CA3
 
@@ -357,9 +322,25 @@ class WiredUsbTransport(
                 blob.contains("Osmo", ignoreCase = true)
         }
 
+        /** 只识别带 UVC Video 接口（class 0x0E）的 Pocket 设备，用于 attach 触发的 UVC 尝试。 */
+        fun isPocketUvcDevice(device: UsbDevice): Boolean =
+            isPocketDevice(device) && hasVideoInterface(device)
+
+        fun hasVideoInterface(device: UsbDevice): Boolean =
+            UvcSelection.hasVideoInterface(
+                (0 until device.interfaceCount).map { index ->
+                    val intf = device.getInterface(index)
+                    UvcSelection.UsbInterfaceSpec(
+                        interfaceClass = intf.interfaceClass,
+                        interfaceSubclass = intf.interfaceSubclass,
+                        interfaceProtocol = intf.interfaceProtocol,
+                    )
+                },
+            )
+
         fun deviceLabel(device: UsbDevice): String {
             val name = device.productName?.takeIf { it.isNotBlank() }
-                ?: device.deviceName?.takeIf { it.isNotBlank() }
+                ?: device.deviceName.takeIf { it.isNotBlank() }
                 ?: "DJI ${device.deviceId}"
             return "$name (VID=${device.vendorId.toString(16)} PID=${device.productId.toString(16)})"
         }

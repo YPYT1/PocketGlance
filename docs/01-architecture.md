@@ -34,13 +34,13 @@ GlanceModel (AndroidViewModel)     单一应用状态枢纽
         │
 ConnectionTransport                连接路径抽象
    ├── WirelessSoftApTransport     → PocketCameraSession (OpenCine)
-   └── WiredUsbTransport           → UsbManager 枚举（直播未接）
+   └── WiredUsbTransport           → Camera2 外接 UVC（LENS_FACING_EXTERNAL）
         │
 GlanceSessionHost                  实现 PocketSessionHost（精简：无 Face AF）
         │
 OpenCine PocketCameraSession       BLE → 配对 → SoftAP → datalink → HevcDecoder
         │
-Surface (TextureView)              LiveFeedHost 一生一次创建
+Surface (TextureView)              无线 LiveFeedHost / 有线 UvcFeedHost 直出
 ```
 
 ### 职责切分原则
@@ -55,10 +55,11 @@ Surface (TextureView)              LiveFeedHost 一生一次创建
 
 ## 直播画面路径（关键）
 
-1. 连接 Live 且监视路由可见时，根 `Box` 在 **NavHost 之外**挂载 `LiveFeedHost`。
-2. `TextureView` 每个 `SurfaceTexture` 生命周期只创建一个 `Surface`，交给 Model → Transport → `PocketCameraSession` → `HevcDecoder`。手机旋转只更新布局；码流分辨率变更可在同一有效 `Surface` 上重新配置解码器。
-3. `onSurfaceTextureUpdated` 把帧时间戳回传解码器，作为首帧显示及恢复判断的依据。
+1. 连接 Live 且监视路由可见时，根 `Box` 在 **NavHost 之外**挂载画面宿主：无线用 `LiveFeedHost`（GPU/GLES 解码链），有线 UVC 用 `UvcFeedHost`（Camera2 直出，绕开 GPU 效果/LUT）。
+2. `TextureView` 每个 `SurfaceTexture` 生命周期只创建一个 `Surface`：无线交给 Model → Transport → `PocketCameraSession` → `HevcDecoder`；有线交给 `WiredUsbTransport` → `UvcCameraController` → `CameraCaptureSession`。手机旋转只更新布局；码流分辨率变更可在同一有效 `Surface` 上重新配置。
+3. `onSurfaceTextureUpdated` 把帧时间戳回传（无线给解码器、有线给 Transport 置 `pictureReady`），作为首帧显示及恢复判断的依据。
 4. 进入 Live 后窗口启用传感器模式；Pocket 翻拍只改变画面矩阵，不重新设置 `requestedOrientation`。
+5. 有线 UVC 在 **Connecting** 阶段就挂出 `UvcFeedHost`，好让 Camera2 有目标 Surface；会话配置完成才切 Live。
 
 ## 连接阶段映射
 
@@ -83,7 +84,7 @@ OpenCine `vocabulary.ConnectionPhase` → 本应用 `ConnectionPhase`：
 2. **蓝牙已打开**（否则弹系统开启蓝牙）
 3. JNI 已加载（`SwiftCoreBootstrap`，在 `GlanceApp.onCreate` 预热）
 
-Manifest 另声明 Wi‑Fi / 附近设备 / USB accessory 等；USB 用 `usb_accessory_filter.xml` 匹配 DJI Osmo Pocket 类附件。
+有线 UVC 路径额外需要 **CAMERA** 运行时权限（`MainActivity.connectWired` 权限门）；Manifest 另声明 Wi‑Fi / 附近设备 / USB accessory 等。外接摄像头依赖 OEM 的 `LENS_FACING_EXTERNAL` Camera HAL/provider（可选能力）。
 
 ## 导航结构
 

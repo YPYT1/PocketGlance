@@ -29,6 +29,11 @@
 - `autoConnectAttempted`（防重复自动连）
 - `reportedLiveCamera`（防重复写 lastCameraId）
 
+`WiredUsbTransport` 额外：
+
+- `controller: UvcCameraController?`（Camera2 打开/会话/关闭）
+- `pendingSurface`、`boundDevice`（拔线匹配）、`pictureWidth`/`pictureHeight`（选定的预览尺寸）
+
 `GlanceModel` 额外：
 
 - `transport`、`observeJob`、`lastSurface`（重连时补绑）
@@ -53,7 +58,7 @@
 | `last_camera_id` | 无线 Live / 用户点选 | 暖重连 |
 | `monitor_orientation` | 设置「竖屏显示」 | 锁定横屏（默认）或开放旋转 |
 
-权限拒绝记忆：OpenCine 权限门用独立 prefs 名 **`pocketglance.permissions`**（勿与 DataStore 混淆）。
+权限拒绝记忆：OpenCine 权限门用独立 prefs 名 **`pocketglance.permissions`**（勿与 DataStore 混淆）。CAMERA 权限由 `MainActivity` 的 `ActivityResultContracts.RequestPermission` 门控，拒绝时经 `GlanceModel.reportWiredPermissionDenied()` 反馈，不写入 DataStore。
 
 ---
 
@@ -71,10 +76,15 @@
 ## Surface 归属
 
 ```text
-LiveFeedHost (remember heldSurface[0])
+无线：LiveFeedHost (remember heldSurface[0])
   → GlanceModel.lastSurface + transport.attachSurface
       → WirelessSoftApTransport.pendingSurface + session.attachSurface
           → HevcDecoder.attachSurface
+
+有线：UvcFeedHost (remember heldSurface[0])
+  → GlanceModel.lastSurface + transport.attachSurface
+      → WiredUsbTransport.pendingSurface + UvcCameraController.attachSurface
+          → CameraDevice.createCaptureSession(Surface)
 ```
 
 销毁 TextureView → attach null → release Surface。

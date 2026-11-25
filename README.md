@@ -5,14 +5,14 @@
 
 ## 兼容性说明（重要）
 
-**本仓库 1.0 仅在 DJI Osmo Pocket 4P 上完成实机验证。**
+**本仓库仅在 DJI Osmo Pocket 4P 上完成实机验证。**
 
 | 机型 | 状态 |
 | --- | --- |
-| **Osmo Pocket 4P** | 已验证：无线监视、相册浏览／删除、有线 USB 基础会话（主机枚举）等 |
+| **Osmo Pocket 4P** | 已验证：无线监视、相册浏览／删除等；有线 UVC 预览已实现但**待平板实机验证** |
 | Osmo Pocket 4 / 3 / 其他 | **未验证**；不保证可用 |
 
-有线直播码流尚未接入；有线路径目前为止会话壳与 USB 枚举。详细功能与缺口见 [`docs/`](./docs/README.md)。
+有线走 UVC 网络摄像头路径：Pocket 4P 切「网络摄像头」后经 Camera2 外接摄像头直出预览（依赖 OEM 外接 Camera HAL，尚未在平板实机验证）。详细功能与缺口见 [`docs/`](./docs/README.md)。
 
 ## 系统文档（给 AI / 开发者）
 
@@ -53,6 +53,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## 版本
 
+- **1.1**：手机监视 HUD／LUT 选择器适配；录制时长独立成行避免遮挡。
 - **1.0**：首个对外标记版本；实机范围仅限 Pocket 4P（见上方兼容性说明）。
 
 ## 图标

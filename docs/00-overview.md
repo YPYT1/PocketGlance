@@ -4,15 +4,15 @@
 
 PocketGlance（应用显示名：**Pocket 监视器**）是一个精简的 Android 监视器应用：
 
-- 连接 DJI Osmo Pocket（主路径：无线 SoftAP；有线为基础会话）
-- 实时监视相机画面（HEVC → Surface）
+- 连接 DJI Osmo Pocket（主路径：无线 SoftAP；有线为 UVC 网络摄像头直出）
+- 实时监视相机画面（无线 HEVC → Surface；有线 Camera2 UVC → TextureView）
 - 浏览机身／存储卡相册（删除、刷新等）
 
-**1.0 仅在 Osmo Pocket 4P 上完成实机验证**；Pocket 4／3 等其他机型未验证。
+**仅在 Osmo Pocket 4P 上完成实机验证**；Pocket 4／3 等其他机型未验证。
 
 包名 / applicationId：`com.opencapture.pocketglance`  
 Debug 后缀：`.debug` → `com.opencapture.pocketglance.debug`  
-当前版本属性：`pocketglance.versionName=1.0.0`，`versionCode=1`（见根 `gradle.properties`）
+当前版本属性：`pocketglance.versionName=1.1.0`，`versionCode=2`（见根 `gradle.properties`）
 
 ## 设计意图
 
@@ -36,7 +36,7 @@ Debug 后缀：`.debug` → `com.opencapture.pocketglance.debug`
 ## 三个界面
 
 1. **主页（Home）**：选无线/有线、看连接状态、选发现的相机；平板宽屏右侧内嵌设置，手机仍走设置页
-2. **监视（Monitor）**：全屏看直播 + 断开/回连接/进相册；画面由根级 `LiveFeedHost` 提供  
+2. **监视（Monitor）**：全屏看直播 + 断开/回连接/进相册；无线画面由根级 `LiveFeedHost`、有线 UVC 由 `UvcFeedHost` 提供
 3. **相册（Gallery）**：按 图片/视频/动图 过滤的网格（样片数据）
 
 ## 与姊妹产品关系
@@ -50,7 +50,7 @@ Debug 后缀：`.debug` → `com.opencapture.pocketglance.debug`
 | --- | --- |
 | 无线发现 → 配对 → SoftAP → 直播 | ✅ 可用（依赖 OpenCine + JNI） |
 | 手机横竖切换 + 相机翻拍画面适配 | 跟随手机传感器；相机码流方向独立处理 |
-| 有线 USB 基础会话 | ⚠️ 主机／附件可 Live 持连，**尚未接直播解码** |
+| 有线 UVC 网络摄像头 | ⚠️ Camera2 外接摄像头直出；**待目标平板实机验证**（OEM 外部 Camera HAL 可选） |
 | 相册 | ⚠️ UI + 分类器就绪，**数据为样片** |
 | 冷启动自动按「启动默认」连接 | ⚠️ 偏好可存，**MainActivity 未自动触发** |
 | 人脸对焦 / 快门角偏好 | ❌ Host 里显式关掉 |

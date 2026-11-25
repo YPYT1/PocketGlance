@@ -77,10 +77,13 @@ API&lt;31 还可能需要系统「定位服务」开着，否则 BLE 扫不到�
 
 ---
 
-## G8 · 有线会话 ≠ 已出图
+## G8 · 有线 UVC 依赖 OEM 外接摄像头 HAL
 
-`WiredUsbTransport` 可进入 **Live**（持有 USB 连接／厂商 Bulk 或附件 FD），但 `pictureReady` 仍为 false，监视为黑屏壳。电脑上的 ExFAT 文件挂载是主机 MSC，不是手机监视通路。  
-接 AOA 解码前，UI 不应假设 Wired 能进 Monitor 出图。
+`WiredUsbTransport` 只识别带 Video 接口（class `0x0E`）的 Pocket 设备，并枚举 Camera2 `LENS_FACING_EXTERNAL` 摄像头。外接摄像头 HAL/provider 是 **OEM 可选**的：部分平板没有，此时即使相机已切 UVC，Camera2 也枚举不到 external cameraId，应显示诊断并保持非 Live。**不要**回退到 claim 厂商 Bulk／MSC/RNDIS 或打开 AOA FD 当作画面来源——那不会出真实帧。
+
+## G18 · UVC 画面是 Camera2 直出，不走 LUT/对焦后处理
+
+有线 UVC 的 `UvcFeedHost` 直接把 Camera2 预览帧渲染到 TextureView，绕过无线 `LiveFeedHost` 的 GLES/效果/LUT 管线。因此 UVC 路径不提供 LUT 预览、对焦框等监视后处理（`chrome.supportsPreviewLut=false` 关闭入口）。不要把无线后处理逻辑复制到 UVC 路径。
 
 ---
 

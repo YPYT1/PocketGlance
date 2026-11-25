@@ -27,7 +27,9 @@
 | `.../connection/ConnectionModels.kt` | 枚举与状态数据类 |
 | `.../connection/ConnectionTransport.kt` | Transport 接口 |
 | `.../connection/WirelessSoftApTransport.kt` | 无线 SoftAP |
-| `.../connection/WiredUsbTransport.kt` | 有线 USB 主机／附件会话 |
+| `.../connection/WiredUsbTransport.kt` | 有线 UVC（Camera2 外接摄像头直出） |
+| `.../connection/UvcCameraController.kt` | Camera2 外接摄像头控制器 |
+| `.../connection/UvcSelection.kt` | UVC 分辨率选择与接口判定（纯函数） |
 | `.../diagnostics/GlanceLog.kt` | 应用内诊断日志与导出 |
 | `.../connection/GlancePrefs.kt` | DataStore 偏好 |
 | `.../session/SwiftCoreBootstrap.kt` | 加载 `.so` |
@@ -36,10 +38,12 @@
 | `.../gallery/GalleryModels.kt` | 相册模型与分类 |
 | `.../ui/HomeScreen.kt` | 主页（现在连接） |
 | `.../ui/SettingsScreen.kt` | 设置（默认连接方式） |
-| `.../ui/MonitorScreen.kt` | 监视 HUD |
+| `.../ui/MonitorScreen.kt` | 监视 HUD（竖屏两排芯片、录制时长独立行） |
+| `.../ui/PreviewLutDialog.kt` | LUT 选择（手机横屏左右栏／竖屏双列／平板多列） |
 | `.../ui/MonitorChromeLabels.kt` | 模式/色彩中文映射 |
 | `.../ui/GalleryScreen.kt` | 相册 |
-| `.../ui/LiveFeedHost.kt` | TextureView / Surface |
+| `.../ui/LiveFeedHost.kt` | 无线 TextureView / Surface |
+| `.../ui/UvcFeedHost.kt` | 有线 UVC 直出 TextureView |
 | `.../ui/LivePerformance.kt` | 常亮/高刷 |
 | `.../ui/GlanceTheme.kt` | 主题色 |
 | `.../ui/Strings.kt` | `GlanceCopy` |
@@ -62,6 +66,7 @@
 | --- | --- |
 | `app/src/test/.../gallery/MediaKindClassifierTest.kt` | 分类 |
 | `app/src/test/.../monitor/MonitorLayoutTest.kt` | 布局几何 |
+| `app/src/test/.../connection/UvcSelectionTest.kt` | UVC 尺寸选择与接口判定 |
 
 ## 兄弟仓（本仓外，构建/行为依赖）
 

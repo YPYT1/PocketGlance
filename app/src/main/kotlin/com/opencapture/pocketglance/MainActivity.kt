@@ -1,9 +1,11 @@
 package com.opencapture.pocketglance
 
+import android.Manifest
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
@@ -16,6 +18,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -56,11 +59,35 @@ import com.opencapture.pocketglance.ui.LivePerformanceGate
 import com.opencapture.pocketglance.ui.MonitorScreen
 import com.opencapture.pocketglance.ui.PreviewLutDialog
 import com.opencapture.pocketglance.ui.SettingsScreen
+import com.opencapture.pocketglance.ui.UvcFeedHost
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     private val model: GlanceModel get() = (application as GlanceApp).model
     private var openRequest by mutableIntStateOf(0)
+
+    private var pendingWiredDevice: UsbDevice? = null
+    private var pendingWiredAccessory: UsbAccessory? = null
+    private val cameraPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) model.connectWired(pendingWiredDevice, pendingWiredAccessory)
+            if (!granted) model.reportWiredPermissionDenied()
+            pendingWiredDevice = null
+            pendingWiredAccessory = null
+        }
+
+    /** 有线 UVC 预览需要 CAMERA 权限；统一走权限门后再 connect。 */
+    private fun connectWired(device: UsbDevice? = null, accessory: UsbAccessory? = null) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            model.connectWired(device, accessory)
+        } else {
+            pendingWiredDevice = device
+            pendingWiredAccessory = accessory
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,7 +95,7 @@ class MainActivity : ComponentActivity() {
         handleUsbIntent(intent)
         setContent {
             GlanceTheme {
-                GlanceRoot(model, openRequest)
+                GlanceRoot(model, openRequest, onConnectWired = { connectWired() })
             }
         }
     }
@@ -95,14 +122,15 @@ class MainActivity : ComponentActivity() {
         when (intent.action) {
             UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
                 val device = intent.usbParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
-                if (device != null && WiredUsbTransport.isPocketDevice(device)) {
-                    model.connectWired(device = device)
+                if (device != null && WiredUsbTransport.isPocketUvcDevice(device)) {
+                    connectWired(device = device)
                 }
             }
             UsbManager.ACTION_USB_ACCESSORY_ATTACHED -> {
                 val accessory = intent.usbParcelableExtra<UsbAccessory>(UsbManager.EXTRA_ACCESSORY)
                 if (accessory != null && WiredUsbTransport.isPocketAccessory(accessory)) {
-                    model.connectWired(accessory = accessory)
+                    // AOA 附件不是 UVC 网络摄像头，不做假预览；仅记录。
+                    GlanceLog.i("wired", "AOA accessory attached (not UVC): ${accessory.model}")
                 }
             }
         }
@@ -130,7 +158,7 @@ private object Routes {
 }
 
 @Composable
-private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
+private fun GlanceRoot(model: GlanceModel, openRequest: Int, onConnectWired: () -> Unit) {
     val nav = rememberNavController()
     val connection by model.connection.collectAsState()
     val foreground by model.monitorForeground.collectAsState()
@@ -174,7 +202,6 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
         }
     }
     val importLuts = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments(), model::importPreviewLuts)
-
     val discovery =
         rememberPermissionGate(
             label = "发现相机",
@@ -279,6 +306,9 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
         }
 
     val showFeed = connection.phase == ConnectionPhase.Live
+    // 有线 UVC 在 Connecting 阶段就挂出直出 TextureView，好让 Camera2 有目标 Surface。
+    val wiredUvc = connection.mode == ConnectionMode.Wired &&
+        (connection.phase == ConnectionPhase.Live || connection.phase == ConnectionPhase.Connecting)
     var startingFeed by remember(showFeed) { mutableStateOf(true) }
     LaunchedEffect(showFeed, connection.pictureReady) {
         if (showFeed && connection.pictureReady) {
@@ -296,8 +326,15 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
     val activeLut = previewLuts.selected.takeIf { usePreviewLut }
 
     Box(modifier = Modifier.fillMaxSize().fullScreenPortraitFallback(if (usePortraitFallback) display.portraitFallbackDegrees else 0f)) {
-        if (showFeed) {
-            LiveFeedHost(
+        when {
+            wiredUvc -> UvcFeedHost(
+                pictureWidth = connection.pictureWidth,
+                pictureHeight = connection.pictureHeight,
+                foreground = foreground,
+                onAttachSurface = model::attachSurface,
+                onFramePresented = model::notePresented,
+            )
+            showFeed -> LiveFeedHost(
                 rotation = pictureRotation,
                 blackSides = picturePortrait,
                 foreground = foreground,
@@ -321,7 +358,7 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
                     connection = connection,
                     permissionHint = permissionHint,
                     onConnectWireless = { startWireless() },
-                    onConnectWired = { model.connect(ConnectionMode.Wired) },
+                    onConnectWired = onConnectWired,
                     onPickCamera = model::connectToFoundCamera,
                     onDisconnect = model::disconnect,
                     onRetryRecovery = model::retryRecovery,

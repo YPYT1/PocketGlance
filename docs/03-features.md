@@ -16,18 +16,18 @@
 失败常见原因：未退 DJI Mimo、JNI 缺失、无蓝牙、权限拒绝、距离远。
 「Pocket 状态」报告连接步骤，不把未发现设备当作关机；唤醒依赖相机仍可通过蓝牙响应。
 
-### F2 · 有线连接基础会话
+### F2 · 有线网络摄像头（UVC）
 
-1. 用户点「有线连接」，或系统因 `USB_DEVICE_ATTACHED` / `USB_ACCESSORY_ATTACHED` 拉起应用  
-2. **OTG 主机**：匹配 DJI VID `0x2CA3`（Pocket 4P 主机复合设备 PID `0x0020` 等），申请权限后 `openDevice`，声明厂商 Bulk（class `0xFF`），进入 Live 会话壳  
-3. **AOA 附件**：匹配 DJI／Pocket／Osmo 附件字符串，`openAccessory` 持有 FD，同样进入 Live 会话壳  
-4. 拔线自动 Failed；**直播码流尚未接入**（黑屏监视壳 + 状态文案）。证据见 `docs/09-wired-usb-evidence.md`
+用户点「有线连接」后按需申请 CAMERA 权限；连接前需在 Pocket 选择「网络摄像头」(2秒)，再以 USB/OTG 接入。Pocket 必须以标准 USB Video Class 设备被 Android Camera2 HAL 暴露为 `LENS_FACING_EXTERNAL`。应用只枚举外部 Camera2 摄像头，选取不超过 1920×1080 的 SurfaceTexture 输出尺寸，并直接将真实帧输出至 TextureView；只有会话配置且 TextureView 收到帧后才报告 Live/画面就绪。无线 GLES/解码链不变；有线不声明厂商 Bulk、不打开 MSC/RNDIS/AOA，也不控制机身模式。
+
+Android 外接摄像头 HAL/provider 属 OEM 可选能力；若没有外部 cameraId，显示相应诊断并保持非 Live。相机权限拒绝也会说明原因。拔线关闭 Camera2 会话。机内录制由 Pocket 本身控制，不代表 App 支持录制控制。Mac 侧接口证据另见 `docs/09-wired-usb-evidence.md`。
 
 ### F3 · 实时监视
 
 - Live 时根级 `LiveFeedHost` 出图  
-- 顶栏无整条黑底（`chromeStatus` → `MonitorChrome`）：左侧叠字显示模式、规格、色彩、EV、ISO、白平衡，右侧是「断开连接」。录制时红点和计时在正中央小胶囊；窄屏下规格单行省略，不会挤动计时。
+- 顶栏无整条黑底（`chromeStatus` → `MonitorChrome`）：模式／规格／色彩与 EV／ISO／白平衡叠字显示，右侧「断开连接」。**竖屏拆成两排**；录制时长单独居中成行，避免和芯片抢位被遮挡。
 - 顶栏下方仅在对焦相关状态时显示操作提示。
+- LUT 选择器：手机竖屏双列分类；**手机横屏左右分栏**（左分类、右条目）；平板仍用自适应多列，边距更宽松。
 - 无线拍照切到 `1:1` 时，Pocket 4P 实测会发送 `720×720` 的可见画面。监视器按实际码流尺寸等比完整显示，空余区域为纯黑；不把宽流拉伸或再做方形裁切。
 - 底栏：首页 / 设置 / 相册；点「首页」只切换页面，保留会话。
 - 手机横竖切换跟随传感器；相机码流翻拍只调整画面矩阵。
