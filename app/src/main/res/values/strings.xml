@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Pocket 一览</string>
+    <string name="brand_title">Pocket 一览</string>
+    <string name="brand_subtitle">只做连接、监视与相册</string>
+    <string name="connect_wireless">无线连接</string>
+    <string name="connect_wired">有线连接</string>
+    <string name="disconnect">断开连接</string>
+    <string name="startup_default">启动默认</string>
+    <string name="startup_wireless">无线</string>
+    <string name="startup_wired">有线</string>
+    <string name="startup_last">上次</string>
+    <string name="gallery">相册</string>
+    <string name="back_monitor">返回监视</string>
+    <string name="filter_all">全部</string>
+    <string name="filter_image">图片</string>
+    <string name="filter_video">视频</string>
+    <string name="filter_motion">动图</string>
+    <string name="tag_image">图片</string>
+    <string name="tag_video">视频</string>
+    <string name="tag_motion">动图</string>
+    <string name="mode_wireless">无线</string>
+    <string name="mode_wired">有线</string>
+    <string name="waiting_picture">等待画面…</string>
+    <string name="preview_title">预览</string>
+    <string name="close">关闭</string>
+</resources>
