@@ -3,9 +3,17 @@ package com.opencapture.pocketglance.monitor
 import android.content.pm.ActivityInfo
 import kotlin.math.max
 
+enum class MonitorOrientation { LandscapeLocked, AutoRotate }
+
 object MonitorLayout {
     const val HOME_ORIENTATION: Int = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
     const val SENSOR_ORIENTATION: Int = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+
+    fun monitorOrientation(preference: MonitorOrientation, picturePortrait: Boolean): Int = when {
+        preference == MonitorOrientation.LandscapeLocked -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        picturePortrait -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        else -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    }
 
     fun autoPictureRotation(cameraVertical: Boolean, pose: PictureRotation): PictureRotation =
         if (cameraVertical && pose.quarterTurn) PictureRotation.Upright else pose

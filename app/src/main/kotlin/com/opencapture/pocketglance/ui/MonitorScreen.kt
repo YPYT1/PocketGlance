@@ -1,6 +1,7 @@
 package com.opencapture.pocketglance.ui
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +15,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenu
@@ -29,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,17 +63,19 @@ fun MonitorScreen(
 ) {
     val chrome = connection.chrome
     val inkSoft = Color.White.copy(alpha = 0.78f)
-    val inkFaint = Color.White.copy(alpha = 0.45f)
     var lastCaptureCount by remember { mutableIntStateOf(chrome.photoCaptureCount) }
-    val flashAnim = remember { Animatable(0f) }
+    val captureFeedback = remember { Animatable(0f) }
     var showRotation by remember { mutableStateOf(false) }
 
-    LaunchedEffect(chrome.photoCaptureCount) {
+    LaunchedEffect(chrome.isPhoto, chrome.photoCaptureCount) {
         val captured = chrome.isPhoto && chrome.photoCaptureCount > lastCaptureCount
         lastCaptureCount = chrome.photoCaptureCount
-        if (!captured) return@LaunchedEffect
-        flashAnim.snapTo(0.82f)
-        flashAnim.animateTo(0f, tween(160))
+        if (!captured) {
+            captureFeedback.snapTo(0f)
+            return@LaunchedEffect
+        }
+        captureFeedback.snapTo(1f)
+        captureFeedback.animateTo(0f, tween(680, easing = LinearEasing))
     }
 
     Box(modifier = Modifier.fillMaxSize().displayCutoutPadding()) {
@@ -103,13 +110,26 @@ fun MonitorScreen(
             )
         }
 
-        if (flashAnim.value > 0.01f) {
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .background(Color.White.copy(alpha = flashAnim.value)),
-            )
+        if (chrome.isPhoto && captureFeedback.value > 0f) {
+            Box(Modifier.fillMaxSize().graphicsLayer {
+                alpha = ((captureFeedback.value - 0.6f) / 0.4f).coerceIn(0f, 1f) * 0.44f
+            }.background(Color.White))
+            if (chrome.photoTimerRemainingSeconds == 0) {
+                Row(
+                    modifier = Modifier.align(Alignment.Center).graphicsLayer {
+                        alpha = (captureFeedback.value / 0.28f).coerceIn(0f, 1f)
+                        val scale = 0.94f + (1f - captureFeedback.value).coerceAtMost(0.3f) * 0.2f
+                        scaleX = scale
+                        scaleY = scale
+                    }.clip(RoundedCornerShape(24.dp)).background(GlanceColors.ink.copy(alpha = 0.82f))
+                        .padding(horizontal = 18.dp, vertical = 11.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Default.CameraAlt, contentDescription = null, tint = GlanceColors.pear, modifier = Modifier.size(19.dp))
+                    Text("已拍摄", color = Color.White, fontSize = 14.sp)
+                }
+            }
         }
 
         if (chrome.photoTimerRemainingSeconds > 0) {
@@ -137,39 +157,21 @@ fun MonitorScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                val summary = if (chrome.isPhoto) chrome.shootingModeLabel else
+                    listOf(chrome.shootingModeLabel, chrome.formatChip, chrome.colorChip).filterNot { it == "—" }.joinToString("  ")
+                Text(summary, Modifier.weight(1f, fill = false), color = Color.White, fontSize = 13.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (chrome.isRecording) {
-                    Box(
-                        modifier =
-                            Modifier
-                                .size(7.dp)
-                                .clip(CircleShape)
-                                .background(GlanceColors.coral),
-                    )
-                    Text(
-                        MonitorChromeLabels.formatElapsed(chrome.recordElapsedSec),
-                        color = Color.White,
-                        fontSize = 13.sp,
-                    )
-                    MonitorChromeLabels.formatRemaining(chrome.recordRemainingSec)?.let { rem ->
-                        Text(rem, color = inkFaint, fontSize = 12.sp)
+                    Row(
+                        Modifier.clip(RoundedCornerShape(12.dp)).background(Color.Black.copy(alpha = 0.45f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.size(7.dp).clip(CircleShape).background(GlanceColors.coral))
+                        Text(MonitorChromeLabels.formatElapsed(chrome.recordElapsedSec), color = Color.White, fontSize = 13.sp, maxLines = 1)
                     }
-                    Text("·", color = inkFaint, fontSize = 12.sp)
                 }
-                Text(chrome.shootingModeLabel, color = Color.White, fontSize = 13.sp)
-                if (!chrome.isPhoto && chrome.formatChip != "—") {
-                    Text("·", color = inkFaint, fontSize = 12.sp)
-                    Text(chrome.formatChip, color = inkSoft, fontSize = 12.sp)
-                }
-                if (chrome.colorChip != "—") {
-                    Text("·", color = inkFaint, fontSize = 12.sp)
-                    Text(chrome.colorChip, color = inkSoft, fontSize = 12.sp)
-                }
-                Text("·", color = inkFaint, fontSize = 12.sp)
-                Text(
-                    GlanceCopy.mode(connection.mode),
-                    color = inkFaint,
-                    fontSize = 12.sp,
-                )
                 if (connection.pictureReady) {
                     Box {
                         TextButton(onClick = { showRotation = true }) {
@@ -193,10 +195,7 @@ fun MonitorScreen(
             if (chrome.isPhoto) {
                 Text(chrome.formatChip, color = inkSoft, fontSize = 12.sp)
             }
-            if (raster != null || chrome.logPreviewLabel != null) {
-                Text(listOfNotNull(raster?.let { "直播 $it" }, chrome.logPreviewLabel).joinToString("  /  "),
-                    color = inkSoft, fontSize = 12.sp)
-            }
+            raster?.let { Text("直播 $it", color = inkSoft, fontSize = 12.sp) }
             if (connection.focus.available && !startingFeed) {
                 val focus = connection.focus
                 when {
@@ -224,17 +223,15 @@ fun MonitorScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TextButton(onClick = onHome) {
-                Text("连接", color = Color.White.copy(alpha = 0.9f))
+                Text("首页", color = Color.White.copy(alpha = 0.9f))
             }
-            if (!chrome.isPhoto && connection.phase == ConnectionPhase.Live) {
+            if (chrome.supportsPreviewLut && connection.phase == ConnectionPhase.Live) {
                 TextButton(onClick = onOpenLuts) {
                     Text(activeLut ?: "LUT", color = GlanceColors.pear, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.widthIn(max = 92.dp))
                 }
             }
-            TextButton(onClick = onSettings) {
-                Text("设置", color = Color.White.copy(alpha = 0.75f))
-            }
+            TextButton(onClick = onSettings) { Text("设置", color = Color.White.copy(alpha = 0.9f)) }
             TextButton(onClick = onGallery, enabled = !chrome.isRecording) {
                 Text("相册", color = GlanceColors.pear)
             }

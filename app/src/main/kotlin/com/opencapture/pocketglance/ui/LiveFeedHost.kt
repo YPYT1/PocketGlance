@@ -8,6 +8,7 @@ import android.view.Surface
 import android.view.TextureView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -19,6 +20,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -41,6 +45,7 @@ import kotlin.math.roundToInt
 @Composable
 fun LiveFeedHost(
     rotation: PictureRotation,
+    blackSides: Boolean,
     foreground: Boolean,
     pictureWidth: Int,
     pictureHeight: Int,
@@ -121,7 +126,7 @@ fun LiveFeedHost(
         modifier =
             Modifier
                 .fillMaxSize()
-                .background(GlanceColors.ink),
+                .background(if (blackSides) Color.Black else GlanceColors.ink),
     ) {
         if (foreground) AndroidView(
             factory = { ctx ->
@@ -195,6 +200,20 @@ fun LiveFeedHost(
         )
         if (waitingForPicture) lastPreview?.let { bitmap ->
             Image(bitmap.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        }
+        if (blackSides) {
+            Canvas(Modifier.matchParentSize()) {
+                val (width, height) = MonitorLayout.pictureSize(size.width, size.height, aspect, rotation)
+                val visibleWidth = if (rotation.quarterTurn) height else width
+                val gutter = ((size.width - visibleWidth) / 2f).coerceAtLeast(0f)
+                if (gutter <= 0f) return@Canvas
+                val right = size.width - gutter
+                drawRect(Color.Black, size = Size(gutter, size.height))
+                drawRect(
+                    Color.Black,
+                    topLeft = Offset(right, 0f), size = Size(gutter, size.height),
+                )
+            }
         }
         if (foreground && !waitingForPicture && focus != null) MonitorFocusLayer(aspect, rotation, focus, onFocus)
     }

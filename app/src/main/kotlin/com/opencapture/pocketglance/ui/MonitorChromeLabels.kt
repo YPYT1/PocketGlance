@@ -11,13 +11,10 @@ object MonitorChromeLabels {
             shootingModeLabel = if (status.isPhoto) "拍照" else shootingModeZh(status.shootingMode),
             formatChip = formatChip(status),
             colorChip = if (status.isPhoto) "—" else colorZh(status.colorMode),
-            logPreviewLabel = when (status.monitorColorMode) {
-                CameraCommands.COLOR_DLOG, CameraCommands.COLOR_DLOG2, CameraCommands.COLOR_DLOG_M -> "机身预览还原状态未读回"
-                else -> null
-            },
+            supportsPreviewLut = !status.isPhoto &&
+                (status.colorMode == CameraCommands.COLOR_DLOG || status.colorMode == CameraCommands.COLOR_DLOG2),
             isRecording = !status.isPhoto && status.isRecording,
             recordElapsedSec = status.recordElapsedSec.coerceAtLeast(0),
-            recordRemainingSec = status.recordRemainingSec.coerceAtLeast(0),
             isPhoto = status.isPhoto,
             photoTimerRemainingSeconds = if (status.isPhoto) status.photoTimerRemainingSeconds.coerceAtLeast(0) else 0,
             photoCaptureCount = status.photoCaptureCount.coerceAtLeast(0),
@@ -54,9 +51,6 @@ object MonitorChromeLabels {
         val r = s % 60
         return "%d:%02d".format(m, r)
     }
-
-    fun formatRemaining(sec: Int): String? =
-        if (sec > 0) "剩 ${formatElapsed(sec)}" else null
 
     fun formatPhotoTimer(ms: Int?): String =
         when (ms) {

@@ -40,7 +40,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 Gradle 递归打包用户提供的温影工坊目录下的全部 `.cube`，也可通过 `-Ppocketglance.lutPack=/path/to/pack` 指定来源。打包需要 Python 3 和 NumPy；找不到该目录时构建失败，不会生成缺少内置包的 APK。原始 LUT 不进 Git；发布含第三方 LUT 的 APK 前需确认授权。
 
-本地 LUT 只影响显示，不修改相机、录制文件或机身的「预览还原」开关；拍照模式不应用 LUT。HUD 同时显示实际收到的直播分辨率，不将录制规格误当作直播清晰度。
+本地 LUT 仅在 D-Log 和 D-Log2 视频模式可用，只影响显示，不修改相机、录制文件或机身的「预览还原」开关。HUD 显示实际收到的直播分辨率，不将录制规格误当作直播清晰度。
 
 ## 依赖（应用直接声明）
 

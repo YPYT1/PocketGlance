@@ -38,7 +38,10 @@ import com.opencapture.pocketglance.connection.ConnectionMode
 import com.opencapture.pocketglance.connection.ConnectionPhase
 import com.opencapture.pocketglance.connection.FocusGesture
 import com.opencapture.pocketglance.monitor.MonitorLayout
+import com.opencapture.pocketglance.monitor.MonitorOrientation
 import com.opencapture.pocketglance.monitor.PictureRotation
+import com.opencapture.pocketglance.monitor.fullScreenPortraitFallback
+import com.opencapture.pocketglance.monitor.rememberMonitorDisplay
 import com.opencapture.pocketglance.ui.GalleryScreen
 import com.opencapture.pocketglance.ui.GlanceTheme
 import com.opencapture.pocketglance.ui.HomeScreen
@@ -98,6 +101,7 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
     val foreground by model.monitorForeground.collectAsState()
     val previewLuts by model.previewLuts.collectAsState()
     val startup by model.startupPreference.collectAsState()
+    val monitorOrientation by model.monitorOrientation.collectAsState()
     val context = LocalContext.current
     val activity = context as? Activity
     val tablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
@@ -109,6 +113,17 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
     val picturePortrait = MonitorLayout.isPortraitPicture(
         connection.pictureWidth.toFloat() / connection.pictureHeight.coerceAtLeast(1), pictureRotation,
     )
+    val display = rememberMonitorDisplay()
+    val wantsPortrait = connection.phase == ConnectionPhase.Live && route == Routes.Monitor &&
+        monitorOrientation == MonitorOrientation.AutoRotate && picturePortrait
+    var portraitFallback by remember(wantsPortrait) { mutableStateOf(false) }
+    LaunchedEffect(wantsPortrait, display.landscape, portraitFallback) {
+        if (wantsPortrait && display.landscape && !portraitFallback) {
+            delay(550)
+            portraitFallback = true
+        }
+    }
+    val usePortraitFallback = wantsPortrait && display.landscape && portraitFallback
     var showLutPicker by rememberSaveable { mutableStateOf(false) }
     val importLuts = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments(), model::importPreviewLuts)
 
@@ -164,9 +179,11 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
         }
     }
 
-    LaunchedEffect(connection.phase, route, tablet, picturePortrait) {
+    LaunchedEffect(connection.phase, route, tablet, picturePortrait, monitorOrientation, usePortraitFallback) {
         activity?.requestedOrientation = when {
-            connection.phase == ConnectionPhase.Live && route == Routes.Monitor && picturePortrait -> MonitorLayout.HOME_ORIENTATION
+            usePortraitFallback -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            connection.phase == ConnectionPhase.Live && route == Routes.Monitor ->
+                MonitorLayout.monitorOrientation(monitorOrientation, picturePortrait)
             connection.phase == ConnectionPhase.Live -> MonitorLayout.SENSOR_ORIENTATION
             tablet -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER
             else -> MonitorLayout.HOME_ORIENTATION
@@ -222,19 +239,25 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
         }
     }
     var previewAvailable by remember(showFeed) { mutableStateOf(true) }
-    val usePreviewLut = showFeed && previewAvailable && !connection.chrome.isPhoto
+    val canOpenLut = showFeed && connection.chrome.supportsPreviewLut
+    val lutPickerVisible = showLutPicker && canOpenLut && route == Routes.Monitor
+    LaunchedEffect(canOpenLut) {
+        if (!canOpenLut) showLutPicker = false
+    }
+    val usePreviewLut = canOpenLut && previewAvailable
     val activeLut = previewLuts.selected.takeIf { usePreviewLut }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().fullScreenPortraitFallback(if (usePortraitFallback) display.portraitFallbackDegrees else 0f)) {
         if (showFeed) {
             LiveFeedHost(
                 rotation = pictureRotation,
+                blackSides = picturePortrait,
                 foreground = foreground,
                 pictureWidth = connection.pictureWidth,
                 pictureHeight = connection.pictureHeight,
                 renderPlan = if (usePreviewLut) previewLuts.plan ?: FeedEffectsRenderPlan.IDENTITY else FeedEffectsRenderPlan.IDENTITY,
                 onPreviewAvailable = { previewAvailable = it },
-                focus = connection.focus.takeIf { route == Routes.Monitor && !showLutPicker && !startingFeed && it.available },
+                focus = connection.focus.takeIf { route == Routes.Monitor && !lutPickerVisible && !startingFeed && it.available },
                 onFocus = model::focus,
                 onAttachSurface = model::attachSurface,
                 onFramePresented = model::notePresented,
@@ -262,7 +285,7 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
                 )
             }
             composable(Routes.Monitor) {
-                BackHandler(enabled = sessionLive && route == Routes.Monitor && activity != null && !showLutPicker) {
+                BackHandler(enabled = sessionLive && route == Routes.Monitor && activity != null && !lutPickerVisible) {
                     activity?.moveTaskToBack(true)
                 }
                 MonitorScreen(
@@ -277,7 +300,7 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
                     raster = if (connection.pictureReady) "${connection.pictureWidth}×${connection.pictureHeight}" else null,
                     onOpenLuts = { showLutPicker = true },
                     onGallery = { nav.navigate(Routes.Gallery) },
-                    onSettings = { nav.navigate(Routes.Settings) },
+                    onSettings = { nav.navigate(Routes.Settings) { launchSingleTop = true } },
                     onRetryRecovery = model::retryRecovery,
                     onHome = { nav.popBackStack(Routes.Home, inclusive = false) },
                 )
@@ -285,12 +308,16 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
             composable(Routes.Gallery) {
                 BackHandler(enabled = sessionLive && route == Routes.Gallery) { returnToMonitor() }
                 val gallery by model.gallery.state.collectAsState()
+                val galleryTags by model.galleryTags.collectAsState()
                 DisposableEffect(model) {
                     model.gallery.open()
                     onDispose { model.gallery.close() }
                 }
                 GalleryScreen(
                     state = gallery,
+                    tags = galleryTags,
+                    onUpdateTag = model::updateGalleryTag,
+                    onDelete = model.gallery::delete,
                     onRefresh = model.gallery::open,
                     onLoadMore = model.gallery::loadMore,
                     onBack = { if (sessionLive) returnToMonitor() else nav.popBackStack(Routes.Home, inclusive = false) },
@@ -301,12 +328,14 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
                 SettingsScreen(
                     startup = startup,
                     onStartup = model::setStartupPreference,
+                    monitorOrientation = monitorOrientation,
+                    onMonitorOrientation = model::setMonitorOrientation,
                     backToMonitor = sessionLive,
                     onBack = { if (sessionLive) returnToMonitor() else nav.popBackStack(Routes.Home, inclusive = false) },
                 )
             }
         }
-        if (showLutPicker && route == Routes.Monitor && !connection.chrome.isPhoto) {
+        if (lutPickerVisible) {
             PreviewLutDialog(previewLuts, previewAvailable, connection.chrome.colorChip,
                 { importLuts.launch(arrayOf("*/*")) }, model::selectPreviewLut) {
                 returnToMonitor()

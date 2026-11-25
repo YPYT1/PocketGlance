@@ -19,6 +19,7 @@ import com.opencapture.pocketglance.connection.StartupPreference
 import com.opencapture.pocketglance.connection.WiredUsbTransport
 import com.opencapture.pocketglance.connection.WirelessSoftApTransport
 import com.opencapture.pocketglance.gallery.GlanceGallery
+import com.opencapture.pocketglance.monitor.MonitorOrientation
 import com.opencapture.pocketglance.session.LiveKeepaliveService
 import com.opencapture.pocketglance.ui.PreviewLut
 import com.opencapture.pocketglance.ui.parsePreviewCube
@@ -54,6 +55,8 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
 
     val startupPreference: StateFlow<StartupPreference> =
         prefs.startupPreference.stateIn(viewModelScope, SharingStarted.Eagerly, StartupPreference.Last)
+
+    val monitorOrientation = prefs.monitorOrientation.stateIn(viewModelScope, SharingStarted.Eagerly, MonitorOrientation.LandscapeLocked)
 
     val lastMode: StateFlow<ConnectionMode?> =
         prefs.lastMode.stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -152,6 +155,11 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
 
     private var transport: ConnectionTransport? = null
     internal val gallery = GlanceGallery(viewModelScope) { (transport as? WirelessSoftApTransport)?.galleryService() }
+    internal val galleryTags = prefs.galleryTags.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    internal fun updateGalleryTag(keys: Set<String>, tag: String, add: Boolean) {
+        if (keys.isNotEmpty() && tag.isNotBlank()) viewModelScope.launch { prefs.updateGalleryTag(keys, tag, add) }
+    }
     private var observeJob: kotlinx.coroutines.Job? = null
     private var lastSurface: Surface? = null
     private val transitionMutex = Mutex()
@@ -162,6 +170,10 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
 
     fun setStartupPreference(value: StartupPreference) {
         viewModelScope.launch { prefs.setStartupPreference(value) }
+    }
+
+    fun setMonitorOrientation(value: MonitorOrientation) {
+        viewModelScope.launch { prefs.setMonitorOrientation(value) }
     }
 
     fun connect(mode: ConnectionMode) {

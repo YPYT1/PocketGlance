@@ -65,10 +65,9 @@ data class MonitorChrome(
     val shootingModeLabel: String = "—",
     val formatChip: String = "—",
     val colorChip: String = "—",
-    val logPreviewLabel: String? = null,
+    val supportsPreviewLut: Boolean = false,
     val isRecording: Boolean = false,
     val recordElapsedSec: Int = 0,
-    val recordRemainingSec: Int = 0,
     val isPhoto: Boolean = false,
     val photoTimerRemainingSeconds: Int = 0,
     /** 完成一张静图后递增，驱动快门闪屏。 */

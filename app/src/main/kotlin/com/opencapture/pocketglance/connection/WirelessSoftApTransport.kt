@@ -177,10 +177,12 @@ class WirelessSoftApTransport(
         if (current.recoveryState.value.requiresOperator()) current.retrySessionRecovery()
     }
 
-    internal fun galleryService(): DjiAndroidMediaService? {
+    internal fun galleryService(): Pair<String, DjiAndroidMediaService>? {
         val current = session ?: return null
         if (_state.value.pocketState != PocketState.Monitoring || current.status.value.isRecording || focusJob?.isActive == true) return null
-        return current.services.get<CameraMediaService>() as? DjiAndroidMediaService
+        val id = current.connectedCamera?.id ?: return null
+        val service = current.services.get<CameraMediaService>() as? DjiAndroidMediaService ?: return null
+        return id to service
     }
 
     fun focus(gesture: FocusGesture, x: Float, y: Float) {

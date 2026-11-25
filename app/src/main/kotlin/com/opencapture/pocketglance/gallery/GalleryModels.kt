@@ -4,6 +4,8 @@ import com.opencapture.opencine.media.MediaAssetKind
 import com.opencapture.opencine.vocabulary.MediaFile
 import com.opencapture.opencine.vocabulary.MediaHTTP
 import com.opencapture.opencine.vocabulary.MediaListCommand
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 enum class MediaKind {
     Image,
@@ -23,6 +25,9 @@ internal data class GalleryItem(
     val storage: GalleryStorage,
     val file: MediaFile,
 ) {
+    val canDelete: Boolean get() = file.isDeletable
+    val captureDate: LocalDate? get() = runCatching { LocalDate.parse(file.dateKey, DateTimeFormatter.BASIC_ISO_DATE) }.getOrNull()
+
     fun url(path: String): String = MediaHTTP.pathUrlString(
         if (storage == GalleryStorage.Internal) MediaListCommand.INTERNAL_STORAGE else MediaListCommand.SD_STORAGE,
         android.net.Uri.encode(path, "/"),
@@ -50,7 +55,13 @@ internal data class GalleryState(
     val loading: Boolean = false,
     val hasMore: Boolean = false,
     val message: String? = null,
+    val cameraId: String? = null,
+    val deleting: Boolean = false,
+    val deletionNote: String? = null,
+    val submittedDeletes: Set<String> = emptySet(),
 )
+
+internal fun galleryTagKey(cameraId: String, itemId: String): String = "$cameraId/$itemId"
 
 object MediaKindClassifier {
     fun classify(fileName: String, mime: String? = null, motionFlag: Boolean = false): MediaKind {

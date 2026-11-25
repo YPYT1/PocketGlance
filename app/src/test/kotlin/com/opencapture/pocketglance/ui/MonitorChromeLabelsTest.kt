@@ -4,7 +4,7 @@ import com.opencapture.opencine.vocabulary.CameraCommands
 import com.opencapture.opencine.vocabulary.CameraStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class MonitorChromeLabelsTest {
@@ -20,7 +20,7 @@ class MonitorChromeLabelsTest {
         assertEquals("超清 · 16:9 · 倒计时 3 秒 · 动图关", chrome.formatChip)
         assertEquals("—", chrome.colorChip)
         assertTrue(chrome.isPhoto)
-        assertNull(chrome.logPreviewLabel)
+        assertFalse(chrome.supportsPreviewLut)
     }
 
     @Test
@@ -48,9 +48,11 @@ class MonitorChromeLabelsTest {
     }
 
     @Test
-    fun logPreviewDoesNotPretendTheCameraSettingIsOff() {
+    fun localLutIsOnlyAvailableInDLogAndDLog2() {
         val video = CameraStatus(shootingMode = CameraCommands.SHOOT_VIDEO)
-        assertEquals("机身预览还原状态未读回", MonitorChromeLabels.from(video.copy(colorMode = CameraCommands.COLOR_DLOG)).logPreviewLabel)
-        assertNull(MonitorChromeLabels.from(video.copy(colorMode = CameraCommands.COLOR_NORMAL)).logPreviewLabel)
+        assertTrue(MonitorChromeLabels.from(video.copy(colorMode = CameraCommands.COLOR_DLOG)).supportsPreviewLut)
+        assertTrue(MonitorChromeLabels.from(video.copy(colorMode = CameraCommands.COLOR_DLOG2)).supportsPreviewLut)
+        assertFalse(MonitorChromeLabels.from(video.copy(colorMode = CameraCommands.COLOR_DLOG_M)).supportsPreviewLut)
+        assertFalse(MonitorChromeLabels.from(video.copy(colorMode = CameraCommands.COLOR_NORMAL)).supportsPreviewLut)
     }
 }

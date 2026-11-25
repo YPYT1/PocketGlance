@@ -8,6 +8,14 @@ import kotlin.test.assertTrue
 
 class MonitorLayoutTest {
     @Test
+    fun monitorOrientationHonorsTheSavedRotationMode() {
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, MonitorLayout.monitorOrientation(MonitorOrientation.LandscapeLocked, true))
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, MonitorLayout.monitorOrientation(MonitorOrientation.LandscapeLocked, false))
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, MonitorLayout.monitorOrientation(MonitorOrientation.AutoRotate, true))
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, MonitorLayout.monitorOrientation(MonitorOrientation.AutoRotate, false))
+    }
+
+    @Test
     fun touchesFollowTheRenderedCropAndQuarterTurn() {
         val (croppedX, croppedY) = requireNotNull(MonitorLayout.picturePoint(0f, 0f, 1200f, 900f, 16f / 9f, PictureRotation.Upright))
         assertEquals(0.125f, croppedX, 0.001f)

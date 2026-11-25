@@ -29,11 +29,14 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.opencapture.pocketglance.connection.StartupPreference
+import com.opencapture.pocketglance.monitor.MonitorOrientation
 
 @Composable
 fun SettingsScreen(
     startup: StartupPreference,
     onStartup: (StartupPreference) -> Unit,
+    monitorOrientation: MonitorOrientation,
+    onMonitorOrientation: (MonitorOrientation) -> Unit,
     backToMonitor: Boolean,
     onBack: () -> Unit,
 ) {
@@ -49,7 +52,23 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         MonitorBackButton(onBack, label = if (backToMonitor) "返回监视界面" else "返回连接首页")
-        Text("连接设置", style = MaterialTheme.typography.headlineMedium)
+        Text("设置", style = MaterialTheme.typography.headlineMedium)
+
+        Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("竖屏显示", style = MaterialTheme.typography.titleLarge)
+            StartupOption(
+                selected = monitorOrientation == MonitorOrientation.LandscapeLocked,
+                title = "锁定横屏",
+                detail = "在横屏中完整显示竖画面，两侧使用纯黑背景",
+                onClick = { onMonitorOrientation(MonitorOrientation.LandscapeLocked) },
+            )
+            StartupOption(
+                selected = monitorOrientation == MonitorOrientation.AutoRotate,
+                title = "开放旋转",
+                detail = "跟随 Pocket：横画面切回横屏，竖画面切换为正向竖屏",
+                onClick = { onMonitorOrientation(MonitorOrientation.AutoRotate) },
+            )
+        }
 
         Column(
             modifier =
