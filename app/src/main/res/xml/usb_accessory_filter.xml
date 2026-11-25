@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- DJI vendor; product ids from Mimo AOA filter (feasibility doc). -->
+    <!-- AOA strings; host-mode product string on Mac is OsmoPocket4P-… -->
     <usb-accessory manufacturer="DJI" model="OsmoPocket" version="1.0" />
     <usb-accessory manufacturer="DJI" model="Osmo Pocket" version="1.0" />
+    <usb-accessory manufacturer="DJI" model="OsmoPocket4P" version="1.0" />
+    <usb-accessory manufacturer="DJI" model="Osmo Pocket 4P" version="1.0" />
+    <usb-accessory manufacturer="DJI" model="OsmoPocket3" version="1.0" />
+    <usb-accessory manufacturer="DJI" model="Osmo Pocket 3" version="1.0" />
 </resources>

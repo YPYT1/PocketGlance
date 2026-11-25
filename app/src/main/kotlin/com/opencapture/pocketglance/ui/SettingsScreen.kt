@@ -101,7 +101,7 @@ fun SettingsScreen(
                 StartupOption(
                     selected = startup == StartupPreference.Wired,
                     title = "有线连接",
-                    detail = "打开后查找 USB 附件",
+                    detail = "打开后查找 USB 主机／附件会话",
                     onClick = { onStartup(StartupPreference.Wired) },
                 )
             }

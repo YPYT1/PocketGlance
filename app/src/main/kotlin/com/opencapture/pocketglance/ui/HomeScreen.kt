@@ -119,7 +119,7 @@ fun HomeScreen(
             )
             ConnectTile(
                 title = "有线连接",
-                subtitle = "USB 线直连（需支持附件模式）",
+                subtitle = "OTG 主机或 USB 附件直连 Pocket",
                 accent = GlanceColors.azure,
                 icon = Icons.Default.Cable,
                 onClick = onConnectWired,
@@ -205,7 +205,7 @@ private fun StatusPanel(
             }
         }
 
-        if (connection.mode == ConnectionMode.Wireless) {
+        if (connection.mode == ConnectionMode.Wireless || connection.mode == ConnectionMode.Wired) {
             Text("Pocket 状态：${connection.pocketState.label}", style = MaterialTheme.typography.labelLarge)
         }
 

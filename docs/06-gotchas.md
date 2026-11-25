@@ -77,9 +77,9 @@ API&lt;31 还可能需要系统「定位服务」开着，否则 BLE 扫不到�
 
 ---
 
-## G8 · 有线 ≠ 已直播
+## G8 · 有线会话 ≠ 已出图
 
-`WiredUsbTransport` 检测到 USB 附件仍返回 **Failed**（有意为之）。  
+`WiredUsbTransport` 可进入 **Live**（持有 USB 连接／厂商 Bulk 或附件 FD），但 `pictureReady` 仍为 false，监视为黑屏壳。电脑上的 ExFAT 文件挂载是主机 MSC，不是手机监视通路。  
 接 AOA 解码前，UI 不应假设 Wired 能进 Monitor 出图。
 
 ---

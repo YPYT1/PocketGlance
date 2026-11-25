@@ -15,6 +15,7 @@
 | 7 | [06-gotchas.md](./06-gotchas.md) | **必读**：改坏系统的常见坑 |
 | 8 | [07-file-map.md](./07-file-map.md) | 路径 ↔ 职责速查 |
 | 9 | [08-roadmap-gaps.md](./08-roadmap-gaps.md) | 已实现 vs 占位/未完成 |
+| 10 | [09-wired-usb-evidence.md](./09-wired-usb-evidence.md) | Pocket 4P 有线 USB 实机接口证据 |
 
 ## 一句话定位
 

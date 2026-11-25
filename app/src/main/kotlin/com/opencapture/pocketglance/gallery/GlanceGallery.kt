@@ -1,6 +1,7 @@
 package com.opencapture.pocketglance.gallery
 
 import com.opencapture.opencine.dji.DjiAndroidMediaService
+import com.opencapture.opencine.media.CameraMediaBrowse
 import com.opencapture.opencine.media.MediaAssetID
 import com.opencapture.opencine.media.MediaBrowseBinding
 import kotlinx.coroutines.CancellationException
@@ -19,22 +20,52 @@ import kotlinx.coroutines.withContext
 internal class GlanceGallery(private val scope: CoroutineScope, private val sourceForCamera: () -> Pair<String, DjiAndroidMediaService>?) {
     private val _state = MutableStateFlow(GalleryState())
     val state = _state.asStateFlow()
-    private var browseJob: Job? = null
+    private var sessionJob: Job? = null
+    private var listJob: Job? = null
     private var pageRequests: Channel<Unit>? = null
     private var activeBrowse: ActiveBrowse? = null
+    private var browseHandle: CameraMediaBrowse? = null
     private var deleteJob: Job? = null
 
-    private data class ActiveBrowse(val service: DjiAndroidMediaService, val binding: MediaBrowseBinding)
+    private data class ActiveBrowse(
+        val service: DjiAndroidMediaService,
+        val binding: MediaBrowseBinding,
+        val cameraId: String,
+    )
 
+    /** 首次进入相册：建立回放会话并拉目录。已在相册内时等价于 refresh。 */
     fun open() {
         if (deleteJob?.isActive == true) return
-        val previous = browseJob
+        if (activeBrowse != null && sessionJob?.isActive == true && browseHandle != null) {
+            refresh()
+            return
+        }
+        startSession()
+    }
+
+    /**
+     * 刷新列表：只重开 catalog，不 close browse。
+     * close 会 exitPlayback，相机会先回到拍摄模式再进相册。
+     */
+    fun refresh() {
+        if (deleteJob?.isActive == true) return
+        val active = activeBrowse
+        val browse = browseHandle
+        if (active == null || browse == null || sessionJob?.isActive != true) {
+            startSession()
+            return
+        }
+        startListing(active, browse)
+    }
+
+    private fun startSession() {
+        val previous = sessionJob
+        listJob?.cancel()
         activeBrowse = null
+        browseHandle = null
         previous?.cancel()
-        val requests = Channel<Unit>(Channel.CONFLATED)
-        pageRequests = requests
         _state.value = GalleryState(loading = true)
-        browseJob = scope.launch {
+        sessionJob = scope.launch {
             previous?.join()
             try {
                 val camera = sourceForCamera()
@@ -44,40 +75,20 @@ internal class GlanceGallery(private val scope: CoroutineScope, private val sour
                 }
                 val (cameraId, source) = camera
                 val browse = source.openBrowse()
-                val active = ActiveBrowse(source, browse.binding)
+                browseHandle = browse
+                val active = ActiveBrowse(source, browse.binding, cameraId)
                 try {
                     if (browse.heldBySource == true) {
                         _state.value = GalleryState(message = "请退出相机屏幕上的相册，再点重试。")
                         awaitCancellation()
                     }
                     activeBrowse = active
-                    val cursor = browse.catalog()
-                    try {
-                        val entries = linkedMapOf<MediaAssetID, GalleryItem>()
-                        while (true) {
-                            val delta = cursor.next() ?: break
-                            if (delta.reset) entries.clear()
-                            delta.removed.forEach(entries::remove)
-                            for (asset in delta.upserts) {
-                                val record = source.mediaCatalogRecord(asset.id, browse.binding) ?: continue
-                                GalleryItem.from(asset.id.rawValue, record.file, asset.kind)?.let { entries[asset.id] = it }
-                            }
-                            _state.value = _state.value.copy(
-                                items = entries.values.sortedByDescending { it.file.filenameTimestamp.orEmpty() },
-                                loading = false,
-                                hasMore = !delta.complete,
-                                cameraId = cameraId,
-                            )
-                            if (delta.complete) break
-                            requests.receive()
-                            _state.value = _state.value.copy(loading = true)
-                        }
-                    } finally {
-                        cursor.close()
-                    }
+                    startListing(active, browse)
                     awaitCancellation()
                 } finally {
+                    listJob?.cancelAndJoin()
                     if (activeBrowse === active) activeBrowse = null
+                    if (browseHandle === browse) browseHandle = null
                     deleteJob?.cancel()
                     withContext(NonCancellable) { browse.close() }
                 }
@@ -85,6 +96,63 @@ internal class GlanceGallery(private val scope: CoroutineScope, private val sour
                 throw error
             } catch (_: Exception) {
                 _state.value = _state.value.copy(loading = false, hasMore = false, message = "读取相机媒体失败，请重试。")
+            }
+        }
+    }
+
+    private fun startListing(active: ActiveBrowse, browse: CameraMediaBrowse) {
+        val previousList = listJob
+        previousList?.cancel()
+        val requests = Channel<Unit>(Channel.CONFLATED)
+        pageRequests = requests
+        _state.value = _state.value.copy(
+            loading = true,
+            hasMore = false,
+            message = null,
+            deletionNote = null,
+            cameraId = active.cameraId,
+        )
+        listJob = scope.launch {
+            previousList?.join()
+            if (activeBrowse !== active || browseHandle !== browse) {
+                requests.close()
+                return@launch
+            }
+            try {
+                val cursor = browse.catalog()
+                try {
+                    val entries = linkedMapOf<MediaAssetID, GalleryItem>()
+                    while (true) {
+                        if (activeBrowse !== active) break
+                        val delta = cursor.next() ?: break
+                        if (delta.reset) entries.clear()
+                        delta.removed.forEach(entries::remove)
+                        for (asset in delta.upserts) {
+                            val record = active.service.mediaCatalogRecord(asset.id, active.binding) ?: continue
+                            GalleryItem.from(asset.id.rawValue, record.file, asset.kind)?.let { entries[asset.id] = it }
+                        }
+                        if (activeBrowse !== active) break
+                        _state.value = _state.value.copy(
+                            items = entries.values.sortedByDescending { it.file.filenameTimestamp.orEmpty() },
+                            loading = false,
+                            hasMore = !delta.complete,
+                            cameraId = active.cameraId,
+                            message = null,
+                        )
+                        if (delta.complete) break
+                        requests.receive()
+                        if (activeBrowse !== active) break
+                        _state.value = _state.value.copy(loading = true)
+                    }
+                } finally {
+                    cursor.close()
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                if (activeBrowse === active) {
+                    _state.value = _state.value.copy(loading = false, hasMore = false, message = "读取相机媒体失败，请重试。")
+                }
             } finally {
                 requests.close()
             }
@@ -152,13 +220,16 @@ internal class GlanceGallery(private val scope: CoroutineScope, private val sour
 
     fun close() {
         activeBrowse = null
+        browseHandle = null
         deleteJob?.cancel()
-        browseJob?.cancel()
+        listJob?.cancel()
+        sessionJob?.cancel()
         _state.value = GalleryState()
     }
 
     suspend fun closeAndWait() {
         close()
-        browseJob?.cancelAndJoin()
+        listJob?.cancelAndJoin()
+        sessionJob?.cancelAndJoin()
     }
 }

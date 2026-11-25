@@ -1,6 +1,8 @@
 package com.opencapture.pocketglance
 
 import android.app.Application
+import android.hardware.usb.UsbAccessory
+import android.hardware.usb.UsbDevice
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.view.Surface
@@ -177,11 +179,26 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun connect(mode: ConnectionMode) {
+        connect(mode, seedDevice = null, seedAccessory = null)
+    }
+
+    /** USB 插入时由 Activity 带上设备／附件种子，走有线基础会话。 */
+    fun connectWired(device: UsbDevice? = null, accessory: UsbAccessory? = null) {
+        connect(ConnectionMode.Wired, seedDevice = device, seedAccessory = accessory)
+    }
+
+    private fun connect(
+        mode: ConnectionMode,
+        seedDevice: UsbDevice?,
+        seedAccessory: UsbAccessory?,
+    ) {
         viewModelScope.launch {
             transitionMutex.withLock {
                 val current = transport
                 if (current != null &&
                     current.mode == mode &&
+                    seedDevice == null &&
+                    seedAccessory == null &&
                     (_connection.value.phase == ConnectionPhase.Live ||
                         _connection.value.phase == ConnectionPhase.Connecting)
                 ) {
@@ -215,7 +232,12 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
                                     viewModelScope.launch { prefs.setLastCameraId(id) }
                                 },
                             )
-                        ConnectionMode.Wired -> WiredUsbTransport(getApplication())
+                        ConnectionMode.Wired ->
+                            WiredUsbTransport(
+                                getApplication(),
+                                seedDevice = seedDevice,
+                                seedAccessory = seedAccessory,
+                            )
                     }
                 transport = next
                 (next as? WirelessSoftApTransport)?.setMonitorForeground(_monitorForeground.value)

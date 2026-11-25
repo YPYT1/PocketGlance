@@ -39,7 +39,7 @@ object MonitorChromeLabels {
     fun colorZh(mode: Int): String =
         when (mode) {
             -1 -> "—"
-            CameraCommands.COLOR_NORMAL, CameraCommands.COLOR_NORMAL10 -> "Normal"
+            CameraCommands.COLOR_NORMAL, CameraCommands.COLOR_NORMAL10 -> "普通"
             CameraCommands.COLOR_HDR -> "HDR"
             CameraCommands.COLOR_DLOG -> "D-Log"
             CameraCommands.COLOR_DLOG2 -> "D-Log2"

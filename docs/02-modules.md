@@ -51,9 +51,10 @@
 
 ### `WiredUsbTransport`
 
-- 用 `UsbManager.accessoryList` 找 DJI/Pocket/Osmo 相关附件
-- **成功检测到附件也仍报 Failed**：明确「有线直播尚未接入解码」
-- `attachSurface` 为空操作
+- OTG **主机**：枚举 VID `0x2CA3` 等 DJI 设备，权限后 `openDevice`，声明厂商 Bulk
+- **AOA 附件**：枚举／打开 `UsbAccessory`，持有 `ParcelFileDescriptor`
+- 成功则 **Live**（无画面）；拔线 Failed；插入可由 Manifest 拉起 `connectWired`
+- `attachSurface` 为空操作（码流未接）
 
 ### `GlancePrefs`（DataStore）
 

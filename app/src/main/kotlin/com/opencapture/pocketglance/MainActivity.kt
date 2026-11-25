@@ -4,6 +4,10 @@ import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.Intent
+import android.hardware.usb.UsbAccessory
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -37,6 +41,7 @@ import com.opencapture.opencine.media.FeedEffectsRenderPlan
 import com.opencapture.pocketglance.connection.ConnectionMode
 import com.opencapture.pocketglance.connection.ConnectionPhase
 import com.opencapture.pocketglance.connection.FocusGesture
+import com.opencapture.pocketglance.connection.WiredUsbTransport
 import com.opencapture.pocketglance.monitor.MonitorLayout
 import com.opencapture.pocketglance.monitor.MonitorOrientation
 import com.opencapture.pocketglance.monitor.PictureRotation
@@ -59,6 +64,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleUsbIntent(intent)
         setContent {
             GlanceTheme {
                 GlanceRoot(model, openRequest)
@@ -78,7 +84,27 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
+        handleUsbIntent(intent)
         openRequest++
+    }
+
+    private fun handleUsbIntent(intent: Intent?) {
+        if (intent == null) return
+        when (intent.action) {
+            UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                val device = intent.usbParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
+                if (device != null && WiredUsbTransport.isPocketDevice(device)) {
+                    model.connectWired(device = device)
+                }
+            }
+            UsbManager.ACTION_USB_ACCESSORY_ATTACHED -> {
+                val accessory = intent.usbParcelableExtra<UsbAccessory>(UsbManager.EXTRA_ACCESSORY)
+                if (accessory != null && WiredUsbTransport.isPocketAccessory(accessory)) {
+                    model.connectWired(accessory = accessory)
+                }
+            }
+        }
     }
 
     override fun onStop() {
@@ -86,6 +112,14 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 }
+
+@Suppress("DEPRECATION")
+private inline fun <reified T : Any> Intent.usbParcelableExtra(key: String): T? =
+    if (Build.VERSION.SDK_INT >= 33) {
+        getParcelableExtra(key, T::class.java)
+    } else {
+        getParcelableExtra(key) as? T
+    }
 
 private object Routes {
     const val Home = "home"
@@ -317,7 +351,7 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
                     tags = galleryTags,
                     onUpdateTag = model::updateGalleryTag,
                     onDelete = model.gallery::delete,
-                    onRefresh = model.gallery::open,
+                    onRefresh = model.gallery::refresh,
                     onLoadMore = model.gallery::loadMore,
                     onBack = { if (sessionLive) returnToMonitor() else nav.popBackStack(Routes.Home, inclusive = false) },
                 )

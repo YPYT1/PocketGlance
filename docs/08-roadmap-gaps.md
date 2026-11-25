@@ -12,14 +12,14 @@
 - DataStore 偏好读写（启动默认 / 上次模式 / 相机 id）
 - 相机相册：机身内存／存储卡、分日期浏览、照片和视频预览、确认后删除并立即从列表移除
 - 直播常亮与高刷尝试
-- USB accessory Manifest 过滤与有线「检测」文案
+- 有线基础会话：OTG 主机（VID/厂商 Bulk）与 AOA 附件打开、权限、拔线；USB 插入拉起
 - unit test：分类器、MonitorLayout
 
 ## 占位 / 部分完成
 
 | 项 | 现状 | 建议方向 |
 | --- | --- | --- |
-| 有线直播 | 只枚举 USB，不解码、不 Live | 接 AOA + 与无线共用 decoder Surface |
+| 有线直播码流 | 会话 Live，无 HEVC／DUML | 解析 Bulk 或 RNDIS，接入现有 decoder Surface（见 docs/09） |
 | 冷启动自动连接 | 偏好可存，无启动副作用 | 在 `GlanceRoot` 用 `resolveStartupMode` + 权限门 |
 
 ## 明确不做（当前产品范围）

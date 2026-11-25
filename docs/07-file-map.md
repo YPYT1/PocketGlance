@@ -27,7 +27,7 @@
 | `.../connection/ConnectionModels.kt` | 枚举与状态数据类 |
 | `.../connection/ConnectionTransport.kt` | Transport 接口 |
 | `.../connection/WirelessSoftApTransport.kt` | 无线 SoftAP |
-| `.../connection/WiredUsbTransport.kt` | 有线 USB 入口 |
+| `.../connection/WiredUsbTransport.kt` | 有线 USB 主机／附件会话 |
 | `.../connection/GlancePrefs.kt` | DataStore 偏好 |
 | `.../session/SwiftCoreBootstrap.kt` | 加载 `.so` |
 | `.../session/GlanceSessionHost.kt` | PocketSessionHost 实现 |
@@ -47,7 +47,9 @@
 
 | 路径 | 说明 |
 | --- | --- |
-| `app/src/main/res/xml/usb_accessory_filter.xml` | DJI Osmo Pocket USB 过滤 |
+| `app/src/main/res/xml/usb_accessory_filter.xml` | DJI AOA 附件过滤 |
+| `app/src/main/res/xml/usb_device_filter.xml` | DJI OTG 主机 VID/PID 过滤 |
+| `docs/09-wired-usb-evidence.md` | Pocket 4P Mac 侧 USB 接口证据 |
 | `app/src/main/res/values/*` | strings/colors/themes |
 | `app/src/main/res/mipmap-*` | Launcher 图标 |
 | `app/src/main/jniLibs/arm64-v8a/` | 预置 `.so` |

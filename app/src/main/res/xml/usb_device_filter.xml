@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Pocket 4P on Mac/OTG host: composite VID 0x2CA3 (11427), PID 0x0020 (32).
+      Interfaces: RNDIS + MSC×2 + vendor bulk 0xFF/0x43 (see docs/09-wired-usb-evidence.md).
+      Mimo AOA-mode product ids from feasibility doc (0x4011 / 0x4015).
+    -->
+    <usb-device vendor-id="11427" product-id="32" />
+    <usb-device vendor-id="11427" product-id="16401" />
+    <usb-device vendor-id="11427" product-id="16405" />
+    <usb-device vendor-id="11427" />
+</resources>
