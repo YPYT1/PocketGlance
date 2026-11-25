@@ -35,9 +35,10 @@
 - 主页或监视「断开」→ `disconnect()`，状态回 Idle，可重新连  
 - `GlanceModel.connect` 换模式会先断旧 Transport  
 
-### F5 · 启动默认（偏好 UI）
+### F5 · 设置页 · 默认连接方式
 
-用户可选：每次无线 / 每次有线 / 记住上次。  
+独立 **设置** 路由（主页右上角 / 监视底栏可进）。  
+三项：上次连接 / 无线连接 / 有线连接（`StartupPreference`）。  
 偏好写入 DataStore；**冷启动自动按偏好发起连接尚未接线**（`resolveStartupMode` 已写好）。
 
 ### F6 · 相册标签（样片）

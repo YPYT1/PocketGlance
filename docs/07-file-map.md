@@ -33,7 +33,8 @@
 | `.../session/GlanceSessionHost.kt` | PocketSessionHost 实现 |
 | `.../monitor/MonitorLayout.kt` | 方向与几何 |
 | `.../gallery/GalleryModels.kt` | 相册模型与分类 |
-| `.../ui/HomeScreen.kt` | 主页 |
+| `.../ui/HomeScreen.kt` | 主页（现在连接） |
+| `.../ui/SettingsScreen.kt` | 设置（默认连接方式） |
 | `.../ui/MonitorScreen.kt` | 监视 HUD |
 | `.../ui/GalleryScreen.kt` | 相册 |
 | `.../ui/LiveFeedHost.kt` | TextureView / Surface |

@@ -21,6 +21,7 @@ import com.opencapture.pocketglance.connection.ConnectionState
 fun MonitorScreen(
     connection: ConnectionState,
     onGallery: () -> Unit,
+    onSettings: () -> Unit,
     onDisconnect: () -> Unit,
     onHome: () -> Unit,
 ) {
@@ -65,6 +66,9 @@ fun MonitorScreen(
         ) {
             TextButton(onClick = onHome, modifier = Modifier.align(Alignment.CenterStart)) {
                 Text("连接", color = GlanceColors.canvas)
+            }
+            TextButton(onClick = onSettings, modifier = Modifier.align(Alignment.Center)) {
+                Text("设置", color = GlanceColors.canvas)
             }
             TextButton(onClick = onGallery, modifier = Modifier.align(Alignment.CenterEnd)) {
                 Text("相册", color = GlanceColors.pear)

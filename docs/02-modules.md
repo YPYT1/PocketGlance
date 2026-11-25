@@ -118,8 +118,9 @@
 | --- | --- |
 | `GlanceTheme` / `GlanceColors` | 浅色品牌色与排版 |
 | `Strings` (`GlanceCopy`) | mode/startup/kind 中文标签 |
-| `HomeScreen` | 连接入口、状态面板、启动默认 |
-| `MonitorScreen` | 监视 HUD（不负责画面） |
+| `HomeScreen` | 连接入口、状态面板；入口进设置 |
+| `SettingsScreen` | 默认连接：上次 / 无线 / 有线 |
+| `MonitorScreen` | 监视 HUD（不负责画面）；可进设置 |
 | `GalleryScreen` | 过滤网格 + 简单预览 Dialog |
 | `LiveFeedHost` | TextureView + Surface 生命周期 + 变换矩阵 |
 | `LivePerformance` | 常亮与高刷 |

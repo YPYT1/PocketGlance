@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -29,9 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.opencapture.pocketglance.connection.ConnectionMode
 import com.opencapture.pocketglance.connection.ConnectionPhase
 import com.opencapture.pocketglance.connection.ConnectionState
 import com.opencapture.pocketglance.connection.FoundCameraRow
@@ -42,12 +39,12 @@ fun HomeScreen(
     connection: ConnectionState,
     startup: StartupPreference,
     permissionHint: String?,
-    onStartup: (StartupPreference) -> Unit,
     onConnectWireless: () -> Unit,
     onConnectWired: () -> Unit,
     onPickCamera: (String) -> Unit,
     onDisconnect: () -> Unit,
     onOpenMonitor: () -> Unit,
+    onOpenSettings: () -> Unit,
     onRequestPermission: () -> Unit,
 ) {
     Column(
@@ -58,16 +55,28 @@ fun HomeScreen(
                 .statusBarsPadding()
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 20.dp),
+                .padding(horizontal = 24.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Pocket 一览", style = MaterialTheme.typography.displayLarge)
-            Text(
-                "连接相机 · 监视画面 · 浏览相册",
-                style = MaterialTheme.typography.bodyLarge,
-                color = GlanceColors.inkMuted,
-            )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("Pocket 一览", style = MaterialTheme.typography.displayLarge)
+                Text(
+                    "连接相机 · 监视画面",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = GlanceColors.inkMuted,
+                )
+            }
+            TextButton(onClick = onOpenSettings) {
+                Text("设置", color = GlanceColors.azure)
+            }
         }
 
         StatusPanel(
@@ -80,7 +89,7 @@ fun HomeScreen(
         )
 
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("选择连接方式", style = MaterialTheme.typography.titleLarge)
+            Text("现在连接", style = MaterialTheme.typography.titleLarge)
             ConnectTile(
                 title = "无线连接",
                 subtitle = "蓝牙配对后加入相机热点",
@@ -97,7 +106,24 @@ fun HomeScreen(
             )
         }
 
-        StartupPanel(startup = startup, onStartup = onStartup)
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(GlanceColors.surface)
+                    .border(1.dp, GlanceColors.hairline, RoundedCornerShape(16.dp))
+                    .clickable(onClick = onOpenSettings)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("默认连接方式", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    GlanceCopy.startup(startup) + " · 在设置中更改",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
 
         Spacer(Modifier.height(8.dp))
     }
@@ -239,87 +265,5 @@ private fun ConnectTile(
             style = MaterialTheme.typography.bodyMedium,
             color = if (onInk) GlanceColors.inkMuted else GlanceColors.surface.copy(alpha = 0.9f),
         )
-    }
-}
-
-@Composable
-private fun StartupPanel(startup: StartupPreference, onStartup: (StartupPreference) -> Unit) {
-    Column(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
-                .background(GlanceColors.surface)
-                .border(1.dp, GlanceColors.hairline, RoundedCornerShape(20.dp))
-                .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text("启动默认", style = MaterialTheme.typography.titleLarge)
-        Text(
-            "下次打开应用时，优先尝试哪一种连接",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            StartupOption(
-                selected = startup == StartupPreference.Wireless,
-                title = "每次用无线",
-                detail = "打开后直接扫描并连接 Pocket 热点",
-                onClick = { onStartup(StartupPreference.Wireless) },
-            )
-            StartupOption(
-                selected = startup == StartupPreference.Wired,
-                title = "每次用有线",
-                detail = "打开后查找 USB 附件",
-                onClick = { onStartup(StartupPreference.Wired) },
-            )
-            StartupOption(
-                selected = startup == StartupPreference.Last,
-                title = "记住上次",
-                detail = "沿用你最近一次成功选用的方式",
-                onClick = { onStartup(StartupPreference.Last) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun StartupOption(
-    selected: Boolean,
-    title: String,
-    detail: String,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(if (selected) GlanceColors.pear.copy(alpha = 0.45f) else GlanceColors.canvas)
-                .border(
-                    width = if (selected) 2.dp else 1.dp,
-                    color = if (selected) GlanceColors.pear else GlanceColors.hairline,
-                    shape = RoundedCornerShape(16.dp),
-                )
-                .clickable(onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Box(
-            modifier =
-                Modifier
-                    .size(20.dp)
-                    .clip(CircleShape)
-                    .border(2.dp, if (selected) GlanceColors.ink else GlanceColors.inkMuted, CircleShape)
-                    .padding(4.dp)
-                    .then(
-                        if (selected) Modifier.clip(CircleShape).background(GlanceColors.ink)
-                        else Modifier,
-                    ),
-        )
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(detail, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Start)
-        }
     }
 }

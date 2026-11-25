@@ -39,6 +39,7 @@ import com.opencapture.pocketglance.ui.HomeScreen
 import com.opencapture.pocketglance.ui.LiveFeedHost
 import com.opencapture.pocketglance.ui.LivePerformanceGate
 import com.opencapture.pocketglance.ui.MonitorScreen
+import com.opencapture.pocketglance.ui.SettingsScreen
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
@@ -59,6 +60,7 @@ private object Routes {
     const val Home = "home"
     const val Monitor = "monitor"
     const val Gallery = "gallery"
+    const val Settings = "settings"
 }
 
 @Composable
@@ -148,7 +150,7 @@ private fun GlanceRoot(model: GlanceModel) {
 
     // 进监视：按当前 Pocket 方向设一次窗口，再 LOCKED。
     // 直播中 cameraVertical 变化：绝不改 requestedOrientation（改了就会卡）。
-    // 离开监视：主页竖屏。
+    // 离开监视（含进设置/相册）：主页竖屏。从设置返回监视时重新按规则锁定。
     LaunchedEffect(route, connection.phase, connection.cameraVertical) {
         val onMonitor = route == Routes.Monitor
         when {
@@ -199,12 +201,12 @@ private fun GlanceRoot(model: GlanceModel) {
                     connection = connection,
                     startup = startup,
                     permissionHint = permissionHint,
-                    onStartup = model::setStartupPreference,
                     onConnectWireless = { startWireless() },
                     onConnectWired = { model.connect(ConnectionMode.Wired) },
                     onPickCamera = model::connectToFoundCamera,
                     onDisconnect = model::disconnect,
                     onOpenMonitor = { nav.navigate(Routes.Monitor) { launchSingleTop = true } },
+                    onOpenSettings = { nav.navigate(Routes.Settings) },
                     onRequestPermission = {
                         pendingWireless = true
                         discovery.request()
@@ -215,6 +217,7 @@ private fun GlanceRoot(model: GlanceModel) {
                 MonitorScreen(
                     connection = connection,
                     onGallery = { nav.navigate(Routes.Gallery) },
+                    onSettings = { nav.navigate(Routes.Settings) },
                     onDisconnect = {
                         model.disconnect()
                         nav.popBackStack(Routes.Home, inclusive = false)
@@ -227,6 +230,13 @@ private fun GlanceRoot(model: GlanceModel) {
                     items = items,
                     filter = filter,
                     onFilter = model::setGalleryFilter,
+                    onBack = { nav.popBackStack() },
+                )
+            }
+            composable(Routes.Settings) {
+                SettingsScreen(
+                    startup = startup,
+                    onStartup = model::setStartupPreference,
                     onBack = { nav.popBackStack() },
                 )
             }

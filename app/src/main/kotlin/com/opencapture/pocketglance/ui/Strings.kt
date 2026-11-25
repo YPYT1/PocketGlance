@@ -15,9 +15,9 @@ object GlanceCopy {
 
     fun startup(pref: StartupPreference): String =
         when (pref) {
-            StartupPreference.Wireless -> "无线"
-            StartupPreference.Wired -> "有线"
-            StartupPreference.Last -> "上次"
+            StartupPreference.Wireless -> "无线连接"
+            StartupPreference.Wired -> "有线连接"
+            StartupPreference.Last -> "上次连接"
         }
 
     fun kind(kind: MediaKind): String =
