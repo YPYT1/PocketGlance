@@ -1,10 +1,10 @@
 package com.opencapture.pocketglance
 
 import android.app.Application
-import android.util.Log
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import com.opencapture.opencine.dji.DjiLog
+import com.opencapture.pocketglance.diagnostics.GlanceLog
 import com.opencapture.pocketglance.session.SwiftCoreBootstrap
 
 class GlanceApp : Application() {
@@ -15,16 +15,18 @@ class GlanceApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        if (BuildConfig.DEBUG) {
-            DjiLog.sink = { _, category, code, message ->
-                if (category == "decoder" || (category == "feed" && code == "cadence") ||
-                    (category == "recovery" && message.startsWith("recovery: action="))
-                ) {
-                    Log.d("GlanceFeed", "$category/$code $message")
-                }
+        GlanceLog.install(this)
+        DjiLog.sink = { _, category, code, message ->
+            val line = "$category/$code $message"
+            when {
+                category == "decoder" || category == "feed" || category == "recovery" ||
+                    category == "media" || category == "usb" || category == "datalink" ->
+                    GlanceLog.d("opencine", line)
+                else -> GlanceLog.d("opencine", line)
             }
         }
         // 尽早加载无线 JNI，避免点「无线连接」时才发现未加载。
-        SwiftCoreBootstrap.isAvailable
+        val jni = SwiftCoreBootstrap.isAvailable
+        GlanceLog.i("boot", "swift jni available=$jni")
     }
 }

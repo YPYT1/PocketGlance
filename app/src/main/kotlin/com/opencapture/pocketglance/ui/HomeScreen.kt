@@ -44,11 +44,11 @@ import com.opencapture.pocketglance.connection.ConnectionMode
 import com.opencapture.pocketglance.connection.FoundCameraRow
 import com.opencapture.pocketglance.connection.PocketState
 import com.opencapture.pocketglance.connection.StartupPreference
+import com.opencapture.pocketglance.monitor.MonitorOrientation
 
 @Composable
 fun HomeScreen(
     connection: ConnectionState,
-    startup: StartupPreference,
     permissionHint: String?,
     onConnectWireless: () -> Unit,
     onConnectWired: () -> Unit,
@@ -58,6 +58,12 @@ fun HomeScreen(
     onOpenMonitor: () -> Unit,
     onOpenSettings: () -> Unit,
     onRequestPermission: () -> Unit,
+    startup: StartupPreference,
+    onStartup: (StartupPreference) -> Unit,
+    monitorOrientation: MonitorOrientation,
+    onMonitorOrientation: (MonitorOrientation) -> Unit,
+    onExportLogs: () -> Unit,
+    exportNote: String? = null,
 ) {
     val tablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
     BoxWithConstraints(
@@ -70,96 +76,102 @@ fun HomeScreen(
                 .verticalScroll(rememberScrollState()),
         contentAlignment = Alignment.TopCenter,
     ) {
-        val twoColumns = tablet && maxWidth >= 840.dp
+        // 平板一律左右分栏（本机竖屏约 787dp，旧门槛 840 会整栏空白）。
+        val twoColumns = tablet
         Column(
-            modifier = Modifier.widthIn(max = 1120.dp).fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-        if (connection.phase == ConnectionPhase.Live) MonitorBackButton(onOpenMonitor)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text("Pocket 监视器", style = MaterialTheme.typography.displayLarge)
-                Text(
-                    "连接相机 · 实时监视",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = GlanceColors.inkMuted,
-                )
-            }
-            TextButton(onClick = onOpenSettings) {
-                Icon(Icons.Default.Settings, contentDescription = null, tint = GlanceColors.azure, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.size(7.dp))
-                Text("设置", color = GlanceColors.azure)
-            }
-        }
-
-        val statusPanel: @Composable () -> Unit = { StatusPanel(
-            connection = connection,
-            permissionHint = permissionHint,
-            onPickCamera = onPickCamera,
-            onDisconnect = onDisconnect,
-            onRetryRecovery = onRetryRecovery,
-            onRequestPermission = onRequestPermission,
-        ) }
-
-        val connectPanel: @Composable () -> Unit = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("现在连接", style = MaterialTheme.typography.titleLarge)
-            ConnectTile(
-                title = "无线连接",
-                subtitle = "蓝牙配对后加入相机热点",
-                accent = GlanceColors.pear,
-                icon = Icons.Default.Wifi,
-                onClick = onConnectWireless,
-            )
-            ConnectTile(
-                title = "有线连接",
-                subtitle = "OTG 主机或 USB 附件直连 Pocket",
-                accent = GlanceColors.azure,
-                icon = Icons.Default.Cable,
-                onClick = onConnectWired,
-            )
-        } }
-
-        val settingsPanel: @Composable () -> Unit = { Box(
             modifier =
                 Modifier
+                    .widthIn(max = if (twoColumns) 1280.dp else 760.dp)
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(GlanceColors.surface)
-                    .border(1.dp, GlanceColors.hairline, RoundedCornerShape(16.dp))
-                    .clickable(onClick = onOpenSettings)
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("默认连接方式", style = MaterialTheme.typography.labelLarge)
-                Text(
-                    GlanceCopy.startup(startup) + " · 在设置中更改",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-        } }
-
-        if (twoColumns) {
-            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                Column(Modifier.weight(1f)) { connectPanel() }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    statusPanel()
-                    settingsPanel()
+            if (connection.phase == ConnectionPhase.Live) MonitorBackButton(onOpenMonitor)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text("Pocket 监视器", style = MaterialTheme.typography.displayLarge)
+                    Text(
+                        "连接相机 · 实时监视",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = GlanceColors.inkMuted,
+                    )
+                }
+                // 平板双栏已内嵌设置，手机仍用右上角进设置页。
+                if (!twoColumns) {
+                    TextButton(onClick = onOpenSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = null, tint = GlanceColors.azure, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.size(7.dp))
+                        Text("设置", color = GlanceColors.azure)
+                    }
                 }
             }
-        } else {
-            statusPanel()
-            connectPanel()
-            settingsPanel()
-        }
 
-        Spacer(Modifier.height(8.dp))
+            val statusPanel: @Composable () -> Unit = {
+                StatusPanel(
+                    connection = connection,
+                    permissionHint = permissionHint,
+                    onPickCamera = onPickCamera,
+                    onDisconnect = onDisconnect,
+                    onRetryRecovery = onRetryRecovery,
+                    onRequestPermission = onRequestPermission,
+                )
+            }
+
+            val connectPanel: @Composable () -> Unit = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("现在连接", style = MaterialTheme.typography.titleLarge)
+                    ConnectTile(
+                        title = "无线连接",
+                        subtitle = "蓝牙配对后加入相机热点",
+                        accent = GlanceColors.pear,
+                        icon = Icons.Default.Wifi,
+                        onClick = onConnectWireless,
+                    )
+                    ConnectTile(
+                        title = "有线连接",
+                        subtitle = "OTG 主机或 USB 附件直连 Pocket",
+                        accent = GlanceColors.azure,
+                        icon = Icons.Default.Cable,
+                        onClick = onConnectWired,
+                    )
+                }
+            }
+
+            val settingsPanel: @Composable () -> Unit = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("设置", style = MaterialTheme.typography.titleLarge)
+                    SettingsContent(
+                        startup = startup,
+                        onStartup = onStartup,
+                        monitorOrientation = monitorOrientation,
+                        onMonitorOrientation = onMonitorOrientation,
+                        onExportLogs = onExportLogs,
+                        exportNote = exportNote,
+                    )
+                }
+            }
+
+            if (twoColumns) {
+                Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        connectPanel()
+                        statusPanel()
+                    }
+                    Column(Modifier.weight(1f)) { settingsPanel() }
+                }
+            } else {
+                statusPanel()
+                connectPanel()
+            }
+
+            Spacer(Modifier.height(8.dp))
         }
     }
 }

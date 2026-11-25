@@ -2,6 +2,7 @@ package com.opencapture.pocketglance.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
@@ -39,21 +40,46 @@ fun SettingsScreen(
     onMonitorOrientation: (MonitorOrientation) -> Unit,
     backToMonitor: Boolean,
     onBack: () -> Unit,
+    onExportLogs: () -> Unit,
+    exportNote: String? = null,
 ) {
     Box(Modifier.fillMaxSize().background(GlanceColors.canvas), contentAlignment = Alignment.TopCenter) {
-    Column(
-        modifier =
-            Modifier
-                .widthIn(max = 760.dp).fillMaxWidth()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-    ) {
-        MonitorBackButton(onBack, label = if (backToMonitor) "返回监视界面" else "返回连接首页")
-        Text("设置", style = MaterialTheme.typography.headlineMedium)
+        Column(
+            modifier =
+                Modifier
+                    .widthIn(max = 760.dp).fillMaxWidth()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            MonitorBackButton(onBack, label = if (backToMonitor) "返回监视界面" else "返回连接首页")
+            Text("设置", style = MaterialTheme.typography.headlineMedium)
+            SettingsContent(
+                startup = startup,
+                onStartup = onStartup,
+                monitorOrientation = monitorOrientation,
+                onMonitorOrientation = onMonitorOrientation,
+                onExportLogs = onExportLogs,
+                exportNote = exportNote,
+            )
+        }
+    }
+}
 
+/** 设置正文：设置页与平板首页右侧共用。 */
+@Composable
+fun SettingsContent(
+    startup: StartupPreference,
+    onStartup: (StartupPreference) -> Unit,
+    monitorOrientation: MonitorOrientation,
+    onMonitorOrientation: (MonitorOrientation) -> Unit,
+    onExportLogs: () -> Unit,
+    exportNote: String? = null,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("竖屏显示", style = MaterialTheme.typography.titleLarge)
             StartupOption(
@@ -106,7 +132,38 @@ fun SettingsScreen(
                 )
             }
         }
-    }
+
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(GlanceColors.surface)
+                    .border(1.dp, GlanceColors.hairline, RoundedCornerShape(20.dp))
+                    .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("诊断日志", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "有线／无线连接过程会写入应用内日志。测试完把平板连回电脑后可用 adb 拉取，也可在此分享。",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(GlanceColors.azure.copy(alpha = 0.18f))
+                        .border(1.dp, GlanceColors.azure, RoundedCornerShape(14.dp))
+                        .clickable(onClick = onExportLogs)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+            ) {
+                Text("导出／分享诊断日志", style = MaterialTheme.typography.bodyLarge)
+            }
+            if (!exportNote.isNullOrBlank()) {
+                Text(exportNote, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
     }
 }
 

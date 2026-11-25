@@ -14,6 +14,7 @@ import android.hardware.usb.UsbAccessory
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.view.Surface
+import com.opencapture.pocketglance.diagnostics.GlanceLog
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,6 +48,8 @@ class WiredUsbTransport(
 
     override suspend fun connect() {
         if (closed) return
+        GlanceLog.i("wired", "connect start seedDevice=${seedDevice?.deviceName} seedAccessory=${seedAccessory?.model}")
+        logUsbInventory()
         emit(
             phase = ConnectionPhase.Connecting,
             message = "正在查找 USB 设备…",
@@ -56,6 +59,7 @@ class WiredUsbTransport(
 
         val accessory = seedAccessory?.takeIf { isPocketAccessory(it) } ?: findAccessory()
         if (accessory != null) {
+            GlanceLog.i("wired", "try accessory ${accessory.manufacturer} ${accessory.model}")
             if (!ensureAccessoryPermission(accessory)) {
                 fail("未获得 USB 附件权限。请在系统弹窗中允许后重试。")
                 return
@@ -65,6 +69,7 @@ class WiredUsbTransport(
 
         val device = seedDevice?.takeIf { isPocketDevice(it) } ?: findDevice()
         if (device != null) {
+            GlanceLog.i("wired", "try host ${deviceLabel(device)}")
             if (!ensureDevicePermission(device)) {
                 fail("未获得 USB 设备权限。请在系统弹窗中允许后重试。")
                 return
@@ -94,11 +99,13 @@ class WiredUsbTransport(
     private fun openAccessorySession(accessory: UsbAccessory): Boolean {
         val fd = runCatching { usb.openAccessory(accessory) }.getOrNull()
         if (fd == null) {
+            GlanceLog.e("wired", "openAccessory failed ${accessory.model}")
             fail("无法打开 USB 附件 ${accessory.model}。")
             return true
         }
         accessoryFd = fd
         boundAccessory = accessory
+        GlanceLog.i("wired", "accessory session open fd=${fd.fd}")
         emit(
             phase = ConnectionPhase.Live,
             message = "有线附件会话已建立（${accessory.manufacturer} ${accessory.model}）。直播码流尚未接入。",
@@ -111,20 +118,37 @@ class WiredUsbTransport(
     private fun openHostSession(device: UsbDevice): Boolean {
         val connection = runCatching { usb.openDevice(device) }.getOrNull()
         if (connection == null) {
+            GlanceLog.e("wired", "openDevice failed ${deviceLabel(device)}")
             fail("无法打开 USB 设备 ${deviceLabel(device)}。")
             return true
         }
         val claimed = ArrayList<UsbInterface>()
         for (index in 0 until device.interfaceCount) {
             val intf = device.getInterface(index)
+            GlanceLog.d(
+                "wired",
+                "iface[$index] class=${intf.interfaceClass} sub=${intf.interfaceSubclass} " +
+                    "proto=${intf.interfaceProtocol} eps=${intf.endpointCount}",
+            )
+            for (ep in 0 until intf.endpointCount) {
+                val endpoint = intf.getEndpoint(ep)
+                GlanceLog.d(
+                    "wired",
+                    "  ep[$ep] addr=0x${endpoint.address.toString(16)} type=${endpoint.type} " +
+                        "dir=${endpoint.direction} max=${endpoint.maxPacketSize}",
+                )
+            }
             // 只声明厂商 Bulk（Mac 上 IF 3–7：class 255 / sub 67），避开 MSC／RNDIS 系统占用。
             if (intf.interfaceClass != UsbConstants.USB_CLASS_VENDOR_SPEC) continue
-            if (connection.claimInterface(intf, true)) claimed += intf
+            val ok = connection.claimInterface(intf, true)
+            GlanceLog.i("wired", "claim vendor iface[$index] -> $ok")
+            if (ok) claimed += intf
         }
         deviceConnection = connection
         claimedInterfaces = claimed
         boundDevice = device
         val title = deviceLabel(device)
+        GlanceLog.i("wired", "host session open claimed=${claimed.size}/${device.interfaceCount} $title")
         emit(
             phase = ConnectionPhase.Live,
             message =
@@ -134,6 +158,23 @@ class WiredUsbTransport(
             cameraTitle = title,
         )
         return true
+    }
+
+    private fun logUsbInventory() {
+        val accessories = usb.accessoryList?.toList().orEmpty()
+        GlanceLog.i("wired", "accessory count=${accessories.size}")
+        accessories.forEach {
+            GlanceLog.i("wired", "  accessory ${it.manufacturer} / ${it.model} / ${it.version}")
+        }
+        val devices = usb.deviceList?.values.orEmpty()
+        GlanceLog.i("wired", "device count=${devices.size}")
+        devices.forEach { device ->
+            GlanceLog.i(
+                "wired",
+                "  device ${deviceLabel(device)} ifaces=${device.interfaceCount} " +
+                    "pocket=${isPocketDevice(device)}",
+            )
+        }
     }
 
     private suspend fun ensureDevicePermission(device: UsbDevice): Boolean {
@@ -250,6 +291,7 @@ class WiredUsbTransport(
     }
 
     private fun fail(message: String) {
+        GlanceLog.w("wired", "fail: $message")
         unregisterPermission()
         _state.value =
             ConnectionState(
@@ -309,7 +351,7 @@ class WiredUsbTransport(
         }
 
         fun isPocketAccessory(accessory: UsbAccessory): Boolean {
-            val blob = listOf(accessory.manufacturer, accessory.model, accessory.description).joinToString(" ")
+            val blob = listOfNotNull(accessory.manufacturer, accessory.model, accessory.description).joinToString(" ")
             return blob.contains("DJI", ignoreCase = true) ||
                 blob.contains("Pocket", ignoreCase = true) ||
                 blob.contains("Osmo", ignoreCase = true)

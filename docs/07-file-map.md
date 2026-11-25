@@ -28,6 +28,7 @@
 | `.../connection/ConnectionTransport.kt` | Transport 接口 |
 | `.../connection/WirelessSoftApTransport.kt` | 无线 SoftAP |
 | `.../connection/WiredUsbTransport.kt` | 有线 USB 主机／附件会话 |
+| `.../diagnostics/GlanceLog.kt` | 应用内诊断日志与导出 |
 | `.../connection/GlancePrefs.kt` | DataStore 偏好 |
 | `.../session/SwiftCoreBootstrap.kt` | 加载 `.so` |
 | `.../session/GlanceSessionHost.kt` | PocketSessionHost 实现 |
@@ -79,7 +80,8 @@
 | 想改… | 先打开 |
 | --- | --- |
 | 连接文案 / 阶段映射 | `WirelessSoftApTransport.kt` |
-| 主页按钮与启动默认 UI | `HomeScreen.kt` |
+| 主页连接入口 | `HomeScreen.kt` |
+| 启动默认（设置页） | `SettingsScreen.kt` |
 | 自动进监视 / 权限 / 方向 | `MainActivity.kt` |
 | 出图 / 旋转画面 | `LiveFeedHost.kt` + `MonitorLayout.kt` |
 | 偏好持久化 | `GlancePrefs.kt` |

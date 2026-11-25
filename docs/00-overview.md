@@ -4,13 +4,15 @@
 
 PocketGlance（应用显示名：**Pocket 监视器**）是一个精简的 Android 监视器应用：
 
-- 连接 DJI Osmo Pocket（主路径：无线 SoftAP）
+- 连接 DJI Osmo Pocket（主路径：无线 SoftAP；有线为基础会话）
 - 实时监视相机画面（HEVC → Surface）
-- 提供相册标签 UI（当前为样片占位，非相机真媒体）
+- 浏览机身／存储卡相册（删除、刷新等）
+
+**1.0 仅在 Osmo Pocket 4P 上完成实机验证**；Pocket 4／3 等其他机型未验证。
 
 包名 / applicationId：`com.opencapture.pocketglance`  
 Debug 后缀：`.debug` → `com.opencapture.pocketglance.debug`  
-当前版本属性：`pocketglance.versionName=0.1.0`，`versionCode=1`（见根 `gradle.properties`）
+当前版本属性：`pocketglance.versionName=1.0.0`，`versionCode=1`（见根 `gradle.properties`）
 
 ## 设计意图
 
@@ -33,7 +35,7 @@ Debug 后缀：`.debug` → `com.opencapture.pocketglance.debug`
 
 ## 三个界面
 
-1. **主页（Home）**：选无线/有线、看连接状态、设「启动默认」、选发现的相机  
+1. **主页（Home）**：选无线/有线、看连接状态、选发现的相机；平板宽屏右侧内嵌设置，手机仍走设置页
 2. **监视（Monitor）**：全屏看直播 + 断开/回连接/进相册；画面由根级 `LiveFeedHost` 提供  
 3. **相册（Gallery）**：按 图片/视频/动图 过滤的网格（样片数据）
 

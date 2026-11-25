@@ -48,7 +48,7 @@
 
 | Key | 读写点 | 用途 |
 | --- | --- | --- |
-| `startup_preference` | Home「启动默认」 | 预定冷启动模式（未自动执行） |
+| `startup_preference` | 设置页「默认连接方式」 | 预定冷启动模式（未自动执行）；首页不展示 |
 | `last_connection_mode` | `connect()` 成功选定模式时 | 「记住上次」 |
 | `last_camera_id` | 无线 Live / 用户点选 | 暖重连 |
 | `monitor_orientation` | 设置「竖屏显示」 | 锁定横屏（默认）或开放旋转 |

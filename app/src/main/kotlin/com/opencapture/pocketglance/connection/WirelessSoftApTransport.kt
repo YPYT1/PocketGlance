@@ -14,6 +14,7 @@ import com.opencapture.opencine.vocabulary.ConnectionPhase as DjiPhase
 import com.opencapture.opencine.vocabulary.FoundCamera
 import com.opencapture.opencine.vocabulary.FocusOverlay
 import com.opencapture.opencine.vocabulary.SessionRecoveryUi
+import com.opencapture.pocketglance.diagnostics.GlanceLog
 import com.opencapture.pocketglance.session.GlanceSessionHost
 import com.opencapture.pocketglance.session.SwiftCoreBootstrap
 import com.opencapture.pocketglance.ui.MonitorChromeLabels
@@ -325,6 +326,7 @@ class WirelessSoftApTransport(
                     val next = mapState(phase, picture.ready, found, chrome, recovery, picture.raster, picture.rotation)
                     if (_state.value.pocketState != next.pocketState) {
                         Log.d(TAG, "camera phase=$phase state=${next.pocketState}")
+                        GlanceLog.i("wireless", "phase=$phase state=${next.pocketState} ready=${picture.ready}")
                     }
                     _state.value = next
                     if (recovery is SessionRecoveryUi.WaitingForOperator || recovery is SessionRecoveryUi.PausedAfterDrops) {

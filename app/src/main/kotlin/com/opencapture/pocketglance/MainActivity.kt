@@ -42,6 +42,7 @@ import com.opencapture.pocketglance.connection.ConnectionMode
 import com.opencapture.pocketglance.connection.ConnectionPhase
 import com.opencapture.pocketglance.connection.FocusGesture
 import com.opencapture.pocketglance.connection.WiredUsbTransport
+import com.opencapture.pocketglance.diagnostics.GlanceLog
 import com.opencapture.pocketglance.monitor.MonitorLayout
 import com.opencapture.pocketglance.monitor.MonitorOrientation
 import com.opencapture.pocketglance.monitor.PictureRotation
@@ -159,6 +160,19 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
     }
     val usePortraitFallback = wantsPortrait && display.landscape && portraitFallback
     var showLutPicker by rememberSaveable { mutableStateOf(false) }
+    var exportNote by remember { mutableStateOf<String?>(null) }
+    fun exportDiagnostics() {
+        runCatching {
+            val file = GlanceLog.exportBundle(context)
+            context.startActivity(
+                Intent.createChooser(GlanceLog.shareIntent(context, file), "分享诊断日志"),
+            )
+            exportNote = "已导出 ${file.name}（也可等平板连回电脑用 adb 拉取）"
+        }.onFailure {
+            GlanceLog.e("export", "share failed", it)
+            exportNote = "导出失败：${it.message}"
+        }
+    }
     val importLuts = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments(), model::importPreviewLuts)
 
     val discovery =
@@ -305,7 +319,6 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
                 BackHandler(enabled = sessionLive && route == Routes.Home) { returnToMonitor() }
                 HomeScreen(
                     connection = connection,
-                    startup = startup,
                     permissionHint = permissionHint,
                     onConnectWireless = { startWireless() },
                     onConnectWired = { model.connect(ConnectionMode.Wired) },
@@ -318,6 +331,12 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
                         pendingWireless = true
                         discovery.request()
                     },
+                    startup = startup,
+                    onStartup = model::setStartupPreference,
+                    monitorOrientation = monitorOrientation,
+                    onMonitorOrientation = model::setMonitorOrientation,
+                    onExportLogs = ::exportDiagnostics,
+                    exportNote = exportNote,
                 )
             }
             composable(Routes.Monitor) {
@@ -365,6 +384,8 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
                     onMonitorOrientation = model::setMonitorOrientation,
                     backToMonitor = sessionLive,
                     onBack = { if (sessionLive) returnToMonitor() else nav.popBackStack(Routes.Home, inclusive = false) },
+                    exportNote = exportNote,
+                    onExportLogs = ::exportDiagnostics,
                 )
             }
         }

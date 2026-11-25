@@ -20,6 +20,7 @@ import com.opencapture.pocketglance.connection.PocketState
 import com.opencapture.pocketglance.connection.StartupPreference
 import com.opencapture.pocketglance.connection.WiredUsbTransport
 import com.opencapture.pocketglance.connection.WirelessSoftApTransport
+import com.opencapture.pocketglance.diagnostics.GlanceLog
 import com.opencapture.pocketglance.gallery.GlanceGallery
 import com.opencapture.pocketglance.monitor.MonitorOrientation
 import com.opencapture.pocketglance.session.LiveKeepaliveService
@@ -257,6 +258,10 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
                         }
                     }
                 prefs.setLastMode(mode)
+                GlanceLog.i(
+                    "connect",
+                    "mode=$mode seedDevice=${seedDevice?.deviceName} seedAccessory=${seedAccessory?.model}",
+                )
                 liveSurface()?.let(next::attachSurface)
                 next.connect()
             }
