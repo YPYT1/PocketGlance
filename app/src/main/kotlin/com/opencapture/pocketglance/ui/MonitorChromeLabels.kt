@@ -17,7 +17,6 @@ object MonitorChromeLabels {
             recordElapsedSec = status.recordElapsedSec.coerceAtLeast(0),
             isPhoto = status.isPhoto,
             photoTimerRemainingSeconds = if (status.isPhoto) status.photoTimerRemainingSeconds.coerceAtLeast(0) else 0,
-            photoCaptureCount = status.photoCaptureCount.coerceAtLeast(0),
         )
 
     fun shootingModeZh(raw: Int): String =

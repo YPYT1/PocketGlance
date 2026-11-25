@@ -70,8 +70,6 @@ data class MonitorChrome(
     val recordElapsedSec: Int = 0,
     val isPhoto: Boolean = false,
     val photoTimerRemainingSeconds: Int = 0,
-    /** 完成一张静图后递增，驱动快门闪屏。 */
-    val photoCaptureCount: Int = 0,
 )
 
 data class ConnectionState(

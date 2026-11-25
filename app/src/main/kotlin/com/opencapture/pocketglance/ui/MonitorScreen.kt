@@ -1,8 +1,5 @@
 package com.opencapture.pocketglance.ui
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,17 +12,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,7 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,20 +54,7 @@ fun MonitorScreen(
 ) {
     val chrome = connection.chrome
     val inkSoft = Color.White.copy(alpha = 0.78f)
-    var lastCaptureCount by remember { mutableIntStateOf(chrome.photoCaptureCount) }
-    val captureFeedback = remember { Animatable(0f) }
     var showRotation by remember { mutableStateOf(false) }
-
-    LaunchedEffect(chrome.isPhoto, chrome.photoCaptureCount) {
-        val captured = chrome.isPhoto && chrome.photoCaptureCount > lastCaptureCount
-        lastCaptureCount = chrome.photoCaptureCount
-        if (!captured) {
-            captureFeedback.snapTo(0f)
-            return@LaunchedEffect
-        }
-        captureFeedback.snapTo(1f)
-        captureFeedback.animateTo(0f, tween(680, easing = LinearEasing))
-    }
 
     Box(modifier = Modifier.fillMaxSize().displayCutoutPadding()) {
         if (connection.phase == ConnectionPhase.Live && connection.pictureReady && startingFeed && connection.pocketState == PocketState.Monitoring) {
@@ -108,28 +86,6 @@ fun MonitorScreen(
                 fontSize = 14.sp,
                 modifier = Modifier.align(Alignment.Center),
             )
-        }
-
-        if (chrome.isPhoto && captureFeedback.value > 0f) {
-            Box(Modifier.fillMaxSize().graphicsLayer {
-                alpha = ((captureFeedback.value - 0.6f) / 0.4f).coerceIn(0f, 1f) * 0.44f
-            }.background(Color.White))
-            if (chrome.photoTimerRemainingSeconds == 0) {
-                Row(
-                    modifier = Modifier.align(Alignment.Center).graphicsLayer {
-                        alpha = (captureFeedback.value / 0.28f).coerceIn(0f, 1f)
-                        val scale = 0.94f + (1f - captureFeedback.value).coerceAtMost(0.3f) * 0.2f
-                        scaleX = scale
-                        scaleY = scale
-                    }.clip(RoundedCornerShape(24.dp)).background(GlanceColors.ink.copy(alpha = 0.82f))
-                        .padding(horizontal = 18.dp, vertical = 11.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Default.CameraAlt, contentDescription = null, tint = GlanceColors.pear, modifier = Modifier.size(19.dp))
-                    Text("已拍摄", color = Color.White, fontSize = 14.sp)
-                }
-            }
         }
 
         if (chrome.photoTimerRemainingSeconds > 0) {
