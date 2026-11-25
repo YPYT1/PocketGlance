@@ -16,4 +16,6 @@ interface ConnectionTransport {
 
     /** Bind the live decoder output surface when the transport owns a picture. */
     fun attachSurface(surface: Surface?)
+
+    fun notePresented(sourceTimestampNs: Long) = Unit
 }

@@ -1,20 +1,21 @@
 package com.opencapture.pocketglance.ui
 
+import android.content.res.Configuration
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,59 +24,72 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.opencapture.pocketglance.connection.ConnectionPhase
 import com.opencapture.pocketglance.connection.ConnectionState
-import kotlinx.coroutines.delay
+import com.opencapture.pocketglance.connection.PocketState
 
-/** 监视页只画控件；画面由根上的 [LiveFeedHost] 常驻提供。方向由根 Activity 在 Live 期间锁定。 */
 @Composable
 fun MonitorScreen(
     connection: ConnectionState,
     onGallery: () -> Unit,
     onSettings: () -> Unit,
+    onRetryRecovery: () -> Unit,
     onDisconnect: () -> Unit,
     onHome: () -> Unit,
 ) {
     val chrome = connection.chrome
     val inkSoft = Color.White.copy(alpha = 0.78f)
     val inkFaint = Color.White.copy(alpha = 0.45f)
-    var settling by remember(connection.phase) { mutableStateOf(connection.phase == ConnectionPhase.Live) }
-    LaunchedEffect(connection.phase) {
-        if (connection.phase == ConnectionPhase.Live) {
-            settling = true
-            // Pocket 首帧会 format poke（4K↔1080），约数秒后才稳。
-            delay(2800)
-            settling = false
-        } else {
-            settling = false
-        }
-    }
-
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    var showLandscapeControls by remember(landscape) { mutableStateOf(false) }
+    val showControls = !landscape || showLandscapeControls || connection.pocketState == PocketState.NeedsRetry
     Box(modifier = Modifier.fillMaxSize()) {
-        if (connection.phase != ConnectionPhase.Live) {
+        if (landscape) {
+            Box(
+                Modifier.fillMaxSize().clickable(
+                    onClickLabel = if (showLandscapeControls) "隐藏监视控件" else "显示监视控件",
+                    onClick = { showLandscapeControls = !showLandscapeControls },
+                ),
+            )
+        }
+        if (connection.pocketState == PocketState.Recovering || connection.pocketState == PocketState.NeedsRetry) {
+            Column(
+                modifier = Modifier.align(Alignment.Center).background(Color.Black.copy(alpha = 0.7f)).padding(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(connection.message, color = Color.White)
+                if (connection.pocketState == PocketState.NeedsRetry) {
+                    TextButton(onClick = onRetryRecovery) { Text("重试连接", color = GlanceColors.pear) }
+                }
+            }
+        } else if (connection.phase != ConnectionPhase.Live) {
             Text(
                 connection.message.ifBlank { "等待画面…" },
                 color = GlanceColors.canvas,
                 modifier = Modifier.align(Alignment.Center),
             )
-        } else if (settling) {
+        } else if (!connection.pictureReady) {
             Text(
-                "正在稳定画面…",
+                "正在等待首帧…",
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 14.sp,
                 modifier = Modifier.align(Alignment.Center),
             )
         }
 
+        if (!showControls) return@Box
         Row(
             modifier =
                 Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 10.dp, vertical = 10.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.Black.copy(alpha = 0.08f))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -83,9 +97,9 @@ fun MonitorScreen(
                 modifier =
                     Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color.Black.copy(alpha = 0.28f))
-                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White.copy(alpha = 0.06f))
+                        .padding(horizontal = 8.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {

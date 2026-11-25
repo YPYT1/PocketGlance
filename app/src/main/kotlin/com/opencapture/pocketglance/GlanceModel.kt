@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class GlanceModel(app: Application) : AndroidViewModel(app) {
     private val prefs = GlancePrefs(app)
@@ -50,6 +52,7 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
     private var transport: ConnectionTransport? = null
     private var observeJob: kotlinx.coroutines.Job? = null
     private var lastSurface: Surface? = null
+    private val transitionMutex = Mutex()
 
     fun setStartupPreference(value: StartupPreference) {
         viewModelScope.launch { prefs.setStartupPreference(value) }
@@ -61,40 +64,42 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
 
     fun connect(mode: ConnectionMode) {
         viewModelScope.launch {
-            val current = transport
-            if (current != null &&
-                current.mode == mode &&
-                (_connection.value.phase == ConnectionPhase.Live ||
-                    _connection.value.phase == ConnectionPhase.Connecting)
-            ) {
-                lastSurface?.let(current::attachSurface)
-                return@launch
+            transitionMutex.withLock {
+                val current = transport
+                if (current != null &&
+                    current.mode == mode &&
+                    (_connection.value.phase == ConnectionPhase.Live ||
+                        _connection.value.phase == ConnectionPhase.Connecting)
+                ) {
+                    liveSurface()?.let(current::attachSurface)
+                    return@withLock
+                }
+                transport?.disconnect()
+                observeJob?.cancel()
+                val warmCamera =
+                    if (mode == ConnectionMode.Wireless) prefs.lastCameraId.first() else null
+                val next =
+                    when (mode) {
+                        ConnectionMode.Wireless ->
+                            WirelessSoftApTransport(
+                                getApplication(),
+                                viewModelScope,
+                                preferredCameraId = warmCamera,
+                                onCameraConnected = { id ->
+                                    viewModelScope.launch { prefs.setLastCameraId(id) }
+                                },
+                            )
+                        ConnectionMode.Wired -> WiredUsbTransport(getApplication())
+                    }
+                transport = next
+                observeJob =
+                    viewModelScope.launch {
+                        next.state.collect { _connection.value = it }
+                    }
+                prefs.setLastMode(mode)
+                liveSurface()?.let(next::attachSurface)
+                next.connect()
             }
-            transport?.disconnect()
-            observeJob?.cancel()
-            val warmCamera =
-                if (mode == ConnectionMode.Wireless) prefs.lastCameraId.first() else null
-            val next =
-                when (mode) {
-                    ConnectionMode.Wireless ->
-                        WirelessSoftApTransport(
-                            getApplication(),
-                            viewModelScope,
-                            preferredCameraId = warmCamera,
-                            onCameraConnected = { id ->
-                                viewModelScope.launch { prefs.setLastCameraId(id) }
-                            },
-                        )
-                    ConnectionMode.Wired -> WiredUsbTransport(getApplication())
-                }
-            transport = next
-            observeJob =
-                viewModelScope.launch {
-                    next.state.collect { _connection.value = it }
-                }
-            prefs.setLastMode(mode)
-            lastSurface?.let(next::attachSurface)
-            next.connect()
         }
     }
 
@@ -105,16 +110,36 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
 
     fun disconnect() {
         viewModelScope.launch {
-            transport?.disconnect()
-            transport = null
-            _connection.value = ConnectionState()
+            transitionMutex.withLock {
+                observeJob?.cancel()
+                observeJob = null
+                transport?.attachSurface(null)
+                lastSurface = null
+                transport?.disconnect()
+                transport = null
+                _connection.value = ConnectionState()
+            }
         }
     }
 
     fun attachSurface(surface: Surface?) {
-        lastSurface = surface
-        transport?.attachSurface(surface)
+        lastSurface = surface?.takeIf { it.isValid }
+        transport?.attachSurface(lastSurface)
     }
+
+    fun notePresented(sourceTimestampNs: Long) {
+        transport?.notePresented(sourceTimestampNs)
+    }
+
+    fun retryRecovery() {
+        (transport as? WirelessSoftApTransport)?.retryRecovery()
+    }
+
+    private fun liveSurface(): Surface? =
+        lastSurface?.takeIf { it.isValid } ?: run {
+            lastSurface = null
+            null
+        }
 
     companion object {
         fun sampleGallery(): List<GalleryItem> =

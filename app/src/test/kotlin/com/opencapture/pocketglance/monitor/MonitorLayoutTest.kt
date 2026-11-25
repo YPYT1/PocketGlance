@@ -7,6 +7,21 @@ import kotlin.test.assertTrue
 
 class MonitorLayoutTest {
     @Test
+    fun centerCropPreservesSourceAspectAndCoversBothWindowOrientations() {
+        for ((windowWidth, windowHeight) in listOf(2760f to 1256f, 1256f to 2760f)) {
+            for (sourceAspect in listOf(16f / 9f, 9f / 16f)) {
+                val rotation = MonitorLayout.contentRotationDegrees(windowHeight > windowWidth, sourceAspect < 1f)
+                val quarterTurn = rotation != 0f
+                val (width, height) =
+                    MonitorLayout.contentSizeBeforeRotation(windowWidth, windowHeight, sourceAspect, quarterTurn)
+                assertEquals(sourceAspect, width / height, 0.001f)
+                assertTrue((if (quarterTurn) height else width) >= windowWidth - 0.1f)
+                assertTrue((if (quarterTurn) width else height) >= windowHeight - 0.1f)
+            }
+        }
+    }
+
+    @Test
     fun landscapeCameraForcesPhoneLandscape() {
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,

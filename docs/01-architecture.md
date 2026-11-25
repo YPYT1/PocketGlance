@@ -55,11 +55,10 @@ Surface (TextureView)              LiveFeedHost 一生一次创建
 
 ## 直播画面路径（关键）
 
-1. `ConnectionPhase.Live` 时，根 `Box` 挂载 `LiveFeedHost`（**在 NavHost 之外**）。
-2. `TextureView` 在 `onSurfaceTextureAvailable` 时创建 **唯一** `Surface`，交给 `GlanceModel.attachSurface` → 当前 Transport → `PocketCameraSession.attachSurface` → `HevcDecoder`。
-3. 监视页本身只画 HUD 控件；`visible=false` 时 feed 仍可存在但 alpha=0（离开监视路由时）。
-4. 进监视时：按横/竖拍设一次 `requestedOrientation`，再设为 `SCREEN_ORIENTATION_LOCKED`。  
-   **直播中 Pocket 翻拍：只改 TextureView 矩阵，绝不改 Activity 方向。**
+1. 连接 Live 且监视路由可见时，根 `Box` 在 **NavHost 之外**挂载 `LiveFeedHost`。
+2. `TextureView` 每个 `SurfaceTexture` 生命周期只创建一个 `Surface`，交给 Model → Transport → `PocketCameraSession` → `HevcDecoder`。手机旋转只更新布局；码流分辨率变更可在同一有效 `Surface` 上重新配置解码器。
+3. `onSurfaceTextureUpdated` 把帧时间戳回传解码器，作为首帧显示及恢复判断的依据。
+4. 进入 Live 后窗口启用传感器模式；Pocket 翻拍只改变画面矩阵，不重新设置 `requestedOrientation`。
 
 ## 连接阶段映射
 
@@ -72,7 +71,7 @@ OpenCine `vocabulary.ConnectionPhase` → 本应用 `ConnectionPhase`：
 | LIVE | Live | 自动进监视（一次） |
 | FAILED | Failed | 提示退出 Mimo、靠近重试 |
 
-本应用把十余个细粒度阶段折叠成四个，方便主页 UI。
+主页额外显示 `PocketState`，区分发现、连接蓝牙、唤醒请求、配对、入网、等待首帧、监视和恢复。未连接时电源状态未知。
 
 ## 权限与系统能力
 

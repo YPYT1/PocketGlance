@@ -7,8 +7,7 @@ import kotlin.math.min
 /**
  * 监视页布局。
  *
- * 进监视页时按 Pocket 横/竖设一次 Activity，随后 [SCREEN_ORIENTATION_LOCKED] 锁死窗口，
- * 中途翻拍只用画面旋转适配——避免 relayout 打断 MediaCodec（日志里的假重连）。
+ * 直播时窗口跟随手机传感器，Pocket 码流方向只影响画面变换。
  * 主页/相册固定竖屏。
  */
 data class MonitorLayoutPlan(
@@ -18,7 +17,7 @@ data class MonitorLayoutPlan(
 
 object MonitorLayout {
     const val HOME_ORIENTATION: Int = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-    const val LOCKED_ORIENTATION: Int = ActivityInfo.SCREEN_ORIENTATION_LOCKED
+    const val SENSOR_ORIENTATION: Int = ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
 
     fun plan(cameraVertical: Boolean): MonitorLayoutPlan {
         val contentAspect = if (cameraVertical) 9f / 16f else 16f / 9f
@@ -28,7 +27,7 @@ object MonitorLayout {
         )
     }
 
-    /** 进入监视页时的一次性方向（随后应 LOCKED）。 */
+    /** 按源画面推导的方向，不用于直播中的窗口切换。 */
     fun entryActivityOrientation(cameraVertical: Boolean): Int =
         if (cameraVertical) {
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
@@ -66,5 +65,18 @@ object MonitorLayout {
             val h = w / contentAspect
             w to h
         }
+    }
+
+    fun contentSizeBeforeRotation(
+        viewWidth: Float,
+        viewHeight: Float,
+        sourceAspect: Float,
+        quarterTurn: Boolean,
+    ): Pair<Float, Float> {
+        if (viewWidth <= 0f || viewHeight <= 0f || sourceAspect <= 0f) return 0f to 0f
+        val targetWidth = if (quarterTurn) viewHeight else viewWidth
+        val targetHeight = if (quarterTurn) viewWidth else viewHeight
+        val width = max(targetWidth, targetHeight * sourceAspect)
+        return width to width / sourceAspect
     }
 }

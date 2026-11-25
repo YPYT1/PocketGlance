@@ -3,6 +3,7 @@ package com.opencapture.pocketglance.ui
 import android.content.res.Configuration
 import android.graphics.Matrix
 import android.graphics.SurfaceTexture
+import android.util.Log
 import android.view.Surface
 import android.view.TextureView
 import androidx.compose.foundation.background
@@ -26,18 +27,21 @@ fun LiveFeedHost(
     visible: Boolean,
     cameraVertical: Boolean,
     onAttachSurface: (Surface?) -> Unit,
+    onFramePresented: (Long) -> Unit,
 ) {
     val heldSurface = remember { arrayOfNulls<Surface>(1) }
     val verticalState = rememberUpdatedState(cameraVertical)
     val attachState = rememberUpdatedState(onAttachSurface)
+    val presentedState = rememberUpdatedState(onFramePresented)
     val phonePortrait =
         LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT
+    val phonePortraitState = rememberUpdatedState(phonePortrait)
 
     DisposableEffect(Unit) {
         onDispose {
+            attachState.value(null)
             heldSurface[0]?.release()
             heldSurface[0] = null
-            attachState.value(null)
         }
     }
 
@@ -61,12 +65,12 @@ fun LiveFeedHost(
                                 width: Int,
                                 height: Int,
                             ) {
-                                // 每次 Available 都重新绑：方向锁之后的第一次挂载、以及销毁重建后。
-                                heldSurface[0]?.release()
-                                val surface = Surface(texture)
-                                heldSurface[0] = surface
-                                attachState.value(surface)
-                                applyFeedTransform(view, verticalState.value, phonePortrait)
+                                if (heldSurface[0] == null) {
+                                    heldSurface[0] = Surface(texture)
+                                    attachState.value(heldSurface[0])
+                                    Log.d("GlanceFeed", "surface attached ${width}x$height")
+                                }
+                                applyFeedTransform(view, verticalState.value, phonePortraitState.value)
                             }
 
                             override fun onSurfaceTextureSizeChanged(
@@ -74,17 +78,20 @@ fun LiveFeedHost(
                                 width: Int,
                                 height: Int,
                             ) {
-                                applyFeedTransform(view, verticalState.value, phonePortrait)
+                                applyFeedTransform(view, verticalState.value, phonePortraitState.value)
                             }
 
                             override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
+                                attachState.value(null)
                                 heldSurface[0]?.release()
                                 heldSurface[0] = null
-                                attachState.value(null)
+                                Log.d("GlanceFeed", "surface destroyed")
                                 return true
                             }
 
-                            override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = Unit
+                            override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {
+                                presentedState.value(texture.timestamp)
+                            }
                         }
                 }
             },
@@ -110,16 +117,14 @@ internal fun applyFeedTransform(
     val aspect = MonitorLayout.plan(cameraVertical).contentAspect
     val rotation = MonitorLayout.contentRotationDegrees(phonePortrait, cameraVertical)
     val matrix = Matrix()
-    if (rotation == 0f) {
-        val (cw, ch) = MonitorLayout.fittedSize(vw, vh, aspect)
-        matrix.setScale(cw / vw, ch / vh, vw / 2f, vh / 2f)
-    } else {
-        // 先按「旋转后的视口」做 contain，再绕中心转 90° 并放大铺满。
-        val (cw, ch) = MonitorLayout.fittedSize(vh, vw, aspect)
-        val scaleX = cw / vh
-        val scaleY = ch / vw
-        val fill = MonitorLayout.fillScaleAfterQuarterTurn(vw, vh)
-        matrix.postScale(scaleX * fill, scaleY * fill, vw / 2f, vh / 2f)
+    val (contentWidth, contentHeight) = MonitorLayout.contentSizeBeforeRotation(vw, vh, aspect, rotation != 0f)
+    matrix.setScale(
+        contentWidth / vw,
+        contentHeight / vh,
+        vw / 2f,
+        vh / 2f,
+    )
+    if (rotation != 0f) {
         matrix.postRotate(rotation, vw / 2f, vh / 2f)
     }
     view.setTransform(matrix)

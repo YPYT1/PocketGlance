@@ -31,7 +31,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.opencapture.pocketglance.connection.ConnectionPhase
 import com.opencapture.pocketglance.connection.ConnectionState
+import com.opencapture.pocketglance.connection.ConnectionMode
 import com.opencapture.pocketglance.connection.FoundCameraRow
+import com.opencapture.pocketglance.connection.PocketState
 import com.opencapture.pocketglance.connection.StartupPreference
 
 @Composable
@@ -43,6 +45,7 @@ fun HomeScreen(
     onConnectWired: () -> Unit,
     onPickCamera: (String) -> Unit,
     onDisconnect: () -> Unit,
+    onRetryRecovery: () -> Unit,
     onOpenMonitor: () -> Unit,
     onOpenSettings: () -> Unit,
     onRequestPermission: () -> Unit,
@@ -84,6 +87,7 @@ fun HomeScreen(
             permissionHint = permissionHint,
             onPickCamera = onPickCamera,
             onDisconnect = onDisconnect,
+            onRetryRecovery = onRetryRecovery,
             onOpenMonitor = onOpenMonitor,
             onRequestPermission = onRequestPermission,
         )
@@ -135,6 +139,7 @@ private fun StatusPanel(
     permissionHint: String?,
     onPickCamera: (String) -> Unit,
     onDisconnect: () -> Unit,
+    onRetryRecovery: () -> Unit,
     onOpenMonitor: () -> Unit,
     onRequestPermission: () -> Unit,
 ) {
@@ -170,6 +175,10 @@ private fun StatusPanel(
             }
         }
 
+        if (connection.mode == ConnectionMode.Wireless) {
+            Text("Pocket 状态：${connection.pocketState.label}", style = MaterialTheme.typography.labelLarge)
+        }
+
         when (connection.phase) {
             ConnectionPhase.Connecting -> {
                 Row(
@@ -203,6 +212,9 @@ private fun StatusPanel(
                     TextButton(onClick = onDisconnect) {
                         Text("断开", color = GlanceColors.coral)
                     }
+                }
+                if (connection.pocketState == PocketState.NeedsRetry) {
+                    TextButton(onClick = onRetryRecovery) { Text("重试连接") }
                 }
             }
             ConnectionPhase.Failed -> {

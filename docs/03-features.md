@@ -10,10 +10,11 @@
 4. `WirelessSoftApTransport.connect`：加载 JNI、建 `PocketCameraSession`、开始扫描  
 5. 若有 `lastCameraId` → 暖重连该 id；否则盲扫，发现第一台自动连  
 6. 用户也可在列表点选其它相机  
-7. 阶段推进：扫描 → GATT → 配对 →（相机屏确认）→ 读 Wi‑Fi → 加热点 → 开 datalink → Live  
+7. 阶段推进：扫描 → GATT → 唤醒和配对请求 →（相机屏确认）→ 读 Wi‑Fi → 加热点 → 开 datalink → Live
 8. Live 后自动导航进监视页（每个连接周期一次）
 
 失败常见原因：未退 DJI Mimo、JNI 缺失、无蓝牙、权限拒绝、距离远。
+「Pocket 状态」报告连接步骤，不把未发现设备当作关机；唤醒依赖相机仍可通过蓝牙响应。
 
 ### F2 · 有线连接入口
 
@@ -29,7 +30,8 @@
   模式（拍照/视频/低光/动图等）· 清晰度 · 色彩 · 连接方式 · 横/竖（低调小字）  
   录制中：红点 + 已录时长 + 剩余可录（有则显示）  
 - 底栏：连接 / 设置 / 相册；断开在顶栏右侧  
-- 进监视锁定窗口方向；翻拍只旋转 TextureView 内容  
+- 手机横竖切换跟随传感器；相机码流翻拍只调整画面矩阵。
+- 横屏默认隐藏 HUD 和系统栏，轻点显示控件；连接恢复失败时可手动重试。
 - 直播时常亮 + 尽量最高刷新率  
 
 ### F4 · 断开与切模式
@@ -73,7 +75,7 @@ Home → 点无线 → 权限/蓝牙 OK
 Live 中 cameraVertical 翻转
   → ConnectionState.cameraVertical 更新
   → LiveFeedHost 重算矩阵（旋转+铺满）
-  → Activity.requestedOrientation 保持 LOCKED（不变）
+  → Activity.requestedOrientation 保持 FULL_SENSOR（不变）
 ```
 
 ## 非功能特性

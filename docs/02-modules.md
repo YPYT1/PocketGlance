@@ -12,7 +12,7 @@
 ### `MainActivity`
 
 - 唯一 Activity：`singleTop`、edge-to-edge、Compose 入口。
-- 内含 `GlanceRoot`：导航、权限门、蓝牙开启、自动进监视、方向锁定、`LiveFeedHost` 挂载。
+- 内含 `GlanceRoot`：导航、权限门、蓝牙开启、自动进监视、窗口方向策略、`LiveFeedHost` 挂载。
 - USB_ACCESSORY_ATTACHED intent-filter（有线入口预留）。
 
 ### `GlanceModel`
@@ -94,9 +94,9 @@
 纯函数工具（含单测）：
 
 - 主页方向：`PORTRAIT`
-- 进监视一次性方向：竖拍→竖屏，横拍→横屏，随后应 `LOCKED`
+- Live 时窗口跟随手机传感器，不由相机码流控制
 - `contentAspect`：9:16 / 16:9
-- `contentRotationDegrees` / `fillScaleAfterQuarterTurn` / `fittedSize`：给 `LiveFeedHost` 矩阵用
+- `contentRotationDegrees` / `contentSizeBeforeRotation`：给 `LiveFeedHost` 计算等比裁切矩阵
 
 **禁止**在直播中途根据翻拍改 Activity orientation（历史假重连问题）。
 

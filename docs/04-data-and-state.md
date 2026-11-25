@@ -10,6 +10,8 @@
 | `phase` | `ConnectionPhase` | Idle / Connecting / Live / Failed |
 | `message` | `String` | 状态/错误中文 |
 | `cameraVertical` | `Boolean` | 解码器判定竖拍画面 |
+| `pictureReady` | `Boolean` | 当前解码会话曾呈现首帧，不代表此刻仍有新帧 |
+| `pocketState` | `PocketState` | 唤醒、连接及恢复进度，不是独立电源遥测 |
 | `foundCameras` | `List<FoundCameraRow>` | 扫描到的相机（无线） |
 | `chrome` | `MonitorChrome` | 模式/清晰度/色彩/录制时长等 HUD |
 
@@ -38,7 +40,6 @@
 
 - `pendingWireless`：等权限后再连  
 - `didAutoOpenMonitor`：本连接周期是否已自动进监视  
-- `monitorWindowLocked`：监视方向是否已锁死  
 
 ---
 
@@ -60,8 +61,7 @@
 路由与业务相位耦合：
 
 - `phase → Live` 且 `!didAutoOpenMonitor` → 进 `monitor`  
-- `Idle` / `Failed` → 重置 `didAutoOpenMonitor`、`monitorWindowLocked`  
-- 离开 `monitor` → 主页竖屏  
+- Live 时启用窗口传感器方向；`Idle` / `Failed` 时恢复竖屏并重置 `didAutoOpenMonitor`。
 
 ---
 
@@ -74,7 +74,7 @@ LiveFeedHost (remember heldSurface[0])
           → HevcDecoder.attachSurface
 ```
 
-销毁 TextureView → release Surface → attach null。  
+销毁 TextureView → attach null → release Surface。
 换 Transport 时 Model 用 `lastSurface` 补绑。
 
 ---

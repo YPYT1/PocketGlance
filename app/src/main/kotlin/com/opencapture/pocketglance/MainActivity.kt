@@ -39,7 +39,6 @@ import com.opencapture.pocketglance.ui.LiveFeedHost
 import com.opencapture.pocketglance.ui.LivePerformanceGate
 import com.opencapture.pocketglance.ui.MonitorScreen
 import com.opencapture.pocketglance.ui.SettingsScreen
-import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     private val model: GlanceModel by viewModels()
@@ -84,9 +83,6 @@ private fun GlanceRoot(model: GlanceModel) {
 
     var pendingWireless by remember { mutableStateOf(false) }
     var didAutoOpenMonitor by remember { mutableStateOf(false) }
-    // Live 期间锁死窗口；先锁方向再挂 Surface，避免横竖切换拆掉 MediaCodec。
-    var monitorWindowLocked by remember { mutableStateOf(false) }
-    var feedReady by remember { mutableStateOf(false) }
 
     val enableBluetooth =
         rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -130,24 +126,12 @@ private fun GlanceRoot(model: GlanceModel) {
         }
     }
 
-    // Live：先按横/竖设一次方向并 LOCKED，再允许挂 TextureView、再进监视页。
-    // Live 期间去设置/相册也不改方向；只有 Idle/Failed 才回主页竖屏。
-    // 翻拍只改画面矩阵，绝不改 requestedOrientation。
-    LaunchedEffect(connection.phase, connection.cameraVertical) {
+    // Live 期间让系统传感器负责横竖切换。Activity 声明了 configChanges，
+    // TextureView 和 Surface 会复用，方向变化只触发布局矩阵更新。
+    LaunchedEffect(connection.phase) {
         when (connection.phase) {
             ConnectionPhase.Live -> {
-                if (!monitorWindowLocked) {
-                    feedReady = false
-                    val entry = MonitorLayout.entryActivityOrientation(connection.cameraVertical)
-                    if (activity?.requestedOrientation != entry) {
-                        activity?.requestedOrientation = entry
-                        delay(220)
-                    }
-                    activity?.requestedOrientation = MonitorLayout.LOCKED_ORIENTATION
-                    monitorWindowLocked = true
-                    delay(80)
-                    feedReady = true
-                }
+                activity?.requestedOrientation = MonitorLayout.SENSOR_ORIENTATION
                 if (!didAutoOpenMonitor) {
                     didAutoOpenMonitor = true
                     if (route != Routes.Monitor) {
@@ -157,8 +141,6 @@ private fun GlanceRoot(model: GlanceModel) {
             }
             ConnectionPhase.Idle, ConnectionPhase.Failed -> {
                 didAutoOpenMonitor = false
-                monitorWindowLocked = false
-                feedReady = false
                 if (activity?.requestedOrientation != MonitorLayout.HOME_ORIENTATION) {
                     activity?.requestedOrientation = MonitorLayout.HOME_ORIENTATION
                 }
@@ -167,7 +149,10 @@ private fun GlanceRoot(model: GlanceModel) {
         }
     }
 
-    LivePerformanceGate(active = connection.phase == ConnectionPhase.Live)
+    LivePerformanceGate(
+        live = connection.phase == ConnectionPhase.Live,
+        immersive = connection.phase == ConnectionPhase.Live && route == Routes.Monitor,
+    )
 
     val permissionHint =
         when {
@@ -179,7 +164,10 @@ private fun GlanceRoot(model: GlanceModel) {
         }
 
     val feedVisible = route == Routes.Monitor
-    val showFeed = connection.phase == ConnectionPhase.Live && feedReady
+    // Attach the decoder surface only after the monitor route is visible. Keeping a
+    // hidden TextureView in the connection screen can consume the first 4K output
+    // before the monitor has a settled layout, which presents as a black monitor.
+    val showFeed = route == Routes.Monitor && connection.phase == ConnectionPhase.Live
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (showFeed) {
@@ -187,6 +175,7 @@ private fun GlanceRoot(model: GlanceModel) {
                 visible = feedVisible,
                 cameraVertical = connection.cameraVertical,
                 onAttachSurface = model::attachSurface,
+                onFramePresented = model::notePresented,
             )
         }
 
@@ -200,6 +189,7 @@ private fun GlanceRoot(model: GlanceModel) {
                     onConnectWired = { model.connect(ConnectionMode.Wired) },
                     onPickCamera = model::connectToFoundCamera,
                     onDisconnect = model::disconnect,
+                    onRetryRecovery = model::retryRecovery,
                     onOpenMonitor = { nav.navigate(Routes.Monitor) { launchSingleTop = true } },
                     onOpenSettings = { nav.navigate(Routes.Settings) },
                     onRequestPermission = {
@@ -213,6 +203,7 @@ private fun GlanceRoot(model: GlanceModel) {
                     connection = connection,
                     onGallery = { nav.navigate(Routes.Gallery) },
                     onSettings = { nav.navigate(Routes.Settings) },
+                    onRetryRecovery = model::retryRecovery,
                     onDisconnect = {
                         model.disconnect()
                         nav.popBackStack(Routes.Home, inclusive = false)

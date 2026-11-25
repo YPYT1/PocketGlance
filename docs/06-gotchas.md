@@ -4,15 +4,15 @@
 
 ---
 
-## G1 · 直播中禁止改 Activity 方向
+## G1 · 不要用相机码流方向切换 Activity
 
-**现象**：中途改 `requestedOrientation` 会触发 relayout，打断 MediaCodec → `presented=-1` / `cfg=false` 黑屏，或日志像「假重连」。  
+手机旋转和相机编码尺寸切换是两条独立路径。旋转附近的 `ENETUNREACH` 说明当时 UDP 路由不可达，不能单凭时间接近判定是旋转造成的。
 
 **正确做法**：
 
-1. **先**按当时 `cameraVertical` 设一次方向 → delay → `SCREEN_ORIENTATION_LOCKED`，**再**挂 `LiveFeedHost`（`feedReady`）  
-2. Live 期间（含去设置/相册）**绝不**改 `requestedOrientation`；翻拍只改 TextureView 矩阵  
-3. 仅 Idle/Failed 时恢复主页 `PORTRAIT`  
+1. 进入 Live 时启用 `SCREEN_ORIENTATION_FULL_SENSOR`，由 `configChanges` 保留 Activity。
+2. 相机翻拍只更新画面矩阵；保留有效 `Surface` 并让解码器根据新码流尺寸重新配置。
+3. 通过 `TextureView` 帧时间戳确认实际出图，不能把链接建立或 codec 配置成功当成首帧。
 
 相关：`MainActivity`、`MonitorLayout`、`LiveFeedHost.applyFeedTransform`。
 
@@ -20,8 +20,8 @@
 
 ## G2 · Surface 一生一次，挂在 NavHost 外
 
-`LiveFeedHost` 必须在导航根上，不能只挂在 `MonitorScreen` 里随路由销毁重建。  
-TextureView 可用后创建一个 `Surface`，销毁时 release 并 `attachSurface(null)`。  
+`LiveFeedHost` 在导航根上，连接 Live 且监视路由可见时挂载。手机旋转和相机翻拍不应重建宿主。
+TextureView 可用后创建一个 `Surface`，销毁时先 `attachSurface(null)` 再释放。
 `GlanceModel` 缓存 `lastSurface`，以便 Transport 重建后补绑。
 
 ---
@@ -54,7 +54,7 @@ Pocket 进 Live 会短暂 `4K ↔ 1080` 踢格式再拉回，编码器重开 GOP
 
 ## G17 · 翻拍转屏靠竖拍编码，不靠云台倾斜
 
-`cameraVertical` 来自画面宽高（竖拍 9:16）。只拧云台、编码仍是 16:9 时，监视器不会「整屏旋转」。Activity 在 Live 中锁定，避免拆 Surface。
+`cameraVertical` 来自画面宽高（竖拍 9:16）。只拧云台、编码仍是 16:9 时，监视器不会因此调整画面方向；手机窗口仍独立跟随传感器。
 
 ---
 

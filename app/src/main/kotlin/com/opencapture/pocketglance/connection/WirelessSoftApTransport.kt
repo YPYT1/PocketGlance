@@ -2,11 +2,13 @@ package com.opencapture.pocketglance.connection
 
 import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.util.Log
 import android.view.Surface
 import com.opencapture.opencine.dji.PocketCameraSession
 import com.opencapture.opencine.vocabulary.CameraStatus
 import com.opencapture.opencine.vocabulary.ConnectionPhase as DjiPhase
 import com.opencapture.opencine.vocabulary.FoundCamera
+import com.opencapture.opencine.vocabulary.SessionRecoveryUi
 import com.opencapture.pocketglance.session.GlanceSessionHost
 import com.opencapture.pocketglance.session.SwiftCoreBootstrap
 import com.opencapture.pocketglance.ui.MonitorChromeLabels
@@ -84,8 +86,10 @@ class WirelessSoftApTransport(
                     mapState(
                         existing.phase,
                         existing.decoder.isVerticalPicture.value,
+                        existing.decoder.hasPicture.value,
                         existing.found.value,
                         existing.chromeStatus.value,
+                        existing.recoveryState.value,
                     )
                 return
             }
@@ -101,6 +105,7 @@ class WirelessSoftApTransport(
                 message =
                     if (warmId != null) "正在快速重连上次的 Pocket…"
                     else "正在扫描 Pocket…",
+                pocketState = PocketState.Discovering,
             )
         val created = PocketCameraSession(appContext, GlanceSessionHost(appContext))
         session = created
@@ -108,14 +113,17 @@ class WirelessSoftApTransport(
         observeJob =
             scope.launch {
                 combine(
-                    created.phaseFlow,
-                    created.decoder.isVerticalPicture,
-                    created.found,
-                    created.chromeStatus,
-                ) { phase, vertical, found, chrome ->
-                    Quad(phase, vertical, found, chrome)
-                }.collectLatest { (phase, vertical, found, chrome) ->
-                    _state.value = mapState(phase, vertical, found, chrome)
+                    combine(created.decoder.isVerticalPicture, created.decoder.hasPicture, ::PictureState),
+                    created.phaseFlow, created.found, created.chromeStatus,
+                    created.recoveryState,
+                ) { picture, phase, found, chrome, recovery ->
+                    SessionState(picture, phase, found, chrome, recovery)
+                }.collectLatest { (picture, phase, found, chrome, recovery) ->
+                    val next = mapState(phase, picture.vertical, picture.ready, found, chrome, recovery)
+                    if (_state.value.pocketState != next.pocketState) {
+                        Log.d("PocketGlance", "camera phase=$phase state=${next.pocketState}")
+                    }
+                    _state.value = next
                     if (phase == DjiPhase.LIVE) {
                         val id = created.connectedCamera?.id ?: found.firstOrNull()?.id
                         if (id != null && id != reportedLiveCamera) {
@@ -160,10 +168,19 @@ class WirelessSoftApTransport(
         session?.attachSurface(surface)
     }
 
+    override fun notePresented(sourceTimestampNs: Long) {
+        if (pendingSurface?.isValid == true) session?.decoder?.notePresented(sourceTimestampNs)
+    }
+
+    fun retryRecovery() {
+        val current = session ?: return
+        if (current.recoveryState.value.requiresOperator()) current.retrySessionRecovery()
+    }
+
     private fun disconnectSession() {
         observeJob?.cancel()
         observeJob = null
-        session?.disconnect()
+        session?.close()
         session = null
         autoConnectAttempted = false
         reportedLiveCamera = null
@@ -172,8 +189,10 @@ class WirelessSoftApTransport(
     private fun mapState(
         phase: DjiPhase,
         cameraVertical: Boolean,
+        pictureReady: Boolean,
         found: List<FoundCamera>,
         status: CameraStatus,
+        recovery: SessionRecoveryUi,
     ): ConnectionState {
         val rows =
             found.map {
@@ -189,25 +208,59 @@ class WirelessSoftApTransport(
                     ConnectionPhase.Connecting to
                         if (rows.isEmpty()) "正在扫描 Pocket…"
                         else "已发现 ${rows.size} 台，正在连接…"
-                DjiPhase.CONNECTING_GATT -> ConnectionPhase.Connecting to "正在建立蓝牙…"
-                DjiPhase.PAIRING -> ConnectionPhase.Connecting to "正在配对…"
-                DjiPhase.AWAITING_APPROVAL -> ConnectionPhase.Connecting to "请在相机屏幕上确认配对"
+                DjiPhase.CONNECTING_GATT -> ConnectionPhase.Connecting to "正在建立蓝牙连接…"
+                DjiPhase.PAIRING -> ConnectionPhase.Connecting to "正在发送唤醒和配对请求…"
+                DjiPhase.AWAITING_APPROVAL -> ConnectionPhase.Connecting to "如 Pocket 屏幕提示，请确认配对。"
                 DjiPhase.READING_WIFI_CREDS -> ConnectionPhase.Connecting to "正在读取相机热点…"
                 DjiPhase.JOINING_WIFI -> ConnectionPhase.Connecting to "正在加入相机 Wi‑Fi…"
                 DjiPhase.OPENING_DATALINK -> ConnectionPhase.Connecting to "正在打开直播通道…"
                 DjiPhase.FAILED ->
                     ConnectionPhase.Failed to "连接失败。请确认已退出官方 Mimo，并靠近相机后重试。"
-                DjiPhase.LIVE -> ConnectionPhase.Live to "无线已连接"
+                DjiPhase.LIVE -> ConnectionPhase.Live to when (recovery) {
+                    is SessionRecoveryUi.Retrying -> "正在恢复连接（${recovery.attempt}/${recovery.maxAttempts}）…"
+                    is SessionRecoveryUi.TakenOver -> "相机已被另一台设备连接。"
+                    is SessionRecoveryUi.PausedAfterDrops -> "连接反复中断，已暂停自动重试。"
+                    is SessionRecoveryUi.WaitingForOperator -> "自动恢复未成功，请重试。"
+                    SessionRecoveryUi.Idle -> "无线已连接"
+                }
             }
         return ConnectionState(
             mode = mode,
             phase = glancePhase,
             message = message,
             cameraVertical = cameraVertical,
+            pictureReady = pictureReady,
             foundCameras = rows,
             chrome = MonitorChromeLabels.from(status),
+            pocketState = pocketStateFor(phase, pictureReady, recovery),
         )
     }
 
-    private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
+    private data class PictureState(val vertical: Boolean, val ready: Boolean)
+
+    private data class SessionState(
+        val picture: PictureState,
+        val phase: DjiPhase,
+        val found: List<FoundCamera>,
+        val chrome: CameraStatus,
+        val recovery: SessionRecoveryUi,
+    )
 }
+
+internal fun pocketStateFor(phase: DjiPhase, pictureReady: Boolean, recovery: SessionRecoveryUi): PocketState {
+    if (phase == DjiPhase.LIVE && recovery.isReconnecting) return PocketState.Recovering
+    if (phase == DjiPhase.LIVE && recovery.requiresOperator()) return PocketState.NeedsRetry
+    return when (phase) {
+        DjiPhase.IDLE -> PocketState.Unknown
+        DjiPhase.SCANNING -> PocketState.Discovering
+        DjiPhase.CONNECTING_GATT -> PocketState.ConnectingBluetooth
+        DjiPhase.PAIRING -> PocketState.Waking
+        DjiPhase.AWAITING_APPROVAL -> PocketState.Pairing
+        DjiPhase.READING_WIFI_CREDS, DjiPhase.JOINING_WIFI -> PocketState.JoiningWifi
+        DjiPhase.OPENING_DATALINK -> PocketState.OpeningLink
+        DjiPhase.LIVE -> if (pictureReady) PocketState.Monitoring else PocketState.Awake
+        DjiPhase.FAILED -> PocketState.Failed
+    }
+}
+
+private fun SessionRecoveryUi.requiresOperator(): Boolean = isRecovering && !isReconnecting
