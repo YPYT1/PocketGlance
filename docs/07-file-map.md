@@ -36,6 +36,7 @@
 | `.../ui/HomeScreen.kt` | 主页（现在连接） |
 | `.../ui/SettingsScreen.kt` | 设置（默认连接方式） |
 | `.../ui/MonitorScreen.kt` | 监视 HUD |
+| `.../ui/MonitorChromeLabels.kt` | 模式/色彩中文映射 |
 | `.../ui/GalleryScreen.kt` | 相册 |
 | `.../ui/LiveFeedHost.kt` | TextureView / Surface |
 | `.../ui/LivePerformance.kt` | 常亮/高刷 |

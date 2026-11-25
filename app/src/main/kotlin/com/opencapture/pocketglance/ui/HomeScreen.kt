@@ -67,9 +67,9 @@ fun HomeScreen(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("Pocket 一览", style = MaterialTheme.typography.displayLarge)
+                Text("Pocket 监视器", style = MaterialTheme.typography.displayLarge)
                 Text(
-                    "连接相机 · 监视画面",
+                    "连接相机 · 实时监视",
                     style = MaterialTheme.typography.bodyLarge,
                     color = GlanceColors.inkMuted,
                 )

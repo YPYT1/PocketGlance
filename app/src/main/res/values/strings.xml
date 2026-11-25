@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Pocket 一览</string>
-    <string name="brand_title">Pocket 一览</string>
-    <string name="brand_subtitle">只做连接、监视与相册</string>
+    <string name="app_name">Pocket 监视器</string>
+    <string name="brand_title">Pocket 监视器</string>
+    <string name="brand_subtitle">连接 · 监视 · 相册</string>
     <string name="connect_wireless">无线连接</string>
     <string name="connect_wired">有线连接</string>
     <string name="disconnect">断开连接</string>
-    <string name="startup_default">启动默认</string>
-    <string name="startup_wireless">无线</string>
-    <string name="startup_wired">有线</string>
-    <string name="startup_last">上次</string>
+    <string name="startup_default">默认连接方式</string>
+    <string name="startup_wireless">无线连接</string>
+    <string name="startup_wired">有线连接</string>
+    <string name="startup_last">上次连接</string>
     <string name="gallery">相册</string>
     <string name="back_monitor">返回监视</string>
     <string name="filter_all">全部</string>

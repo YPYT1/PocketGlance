@@ -5,14 +5,16 @@ import android.view.WindowManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalContext
+import com.opencapture.pocketglance.session.LiveKeepaliveService
 
 /**
- * 监视直播时榨干前台：常亮 + 尽量锁最高刷新率。
+ * 监视直播时榨干前台：常亮 + 尽量锁最高刷新率 + 前台服务保活 SoftAP。
  * Wi‑Fi `WIFI_MODE_FULL_LOW_LATENCY` 已由 PocketCameraSession 在进 SoftAP 时持有。
  */
 @Composable
 fun LivePerformanceGate(active: Boolean) {
     val activity = LocalContext.current as? Activity ?: return
+    val appContext = activity.applicationContext
     DisposableEffect(active) {
         val window = activity.window
         val previousModeId = window.attributes.preferredDisplayModeId
@@ -26,12 +28,14 @@ fun LivePerformanceGate(active: Boolean) {
                 attrs.preferredDisplayModeId = peak.modeId
                 window.attributes = attrs
             }
+            runCatching { LiveKeepaliveService.start(appContext) }
         }
         onDispose {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             val attrs = window.attributes
             attrs.preferredDisplayModeId = previousModeId
             window.attributes = attrs
+            runCatching { LiveKeepaliveService.stop(appContext) }
         }
     }
 }

@@ -61,11 +61,11 @@ fun LiveFeedHost(
                                 width: Int,
                                 height: Int,
                             ) {
-                                if (heldSurface[0] == null) {
-                                    val surface = Surface(texture)
-                                    heldSurface[0] = surface
-                                    attachState.value(surface)
-                                }
+                                // 每次 Available 都重新绑：方向锁之后的第一次挂载、以及销毁重建后。
+                                heldSurface[0]?.release()
+                                val surface = Surface(texture)
+                                heldSurface[0] = surface
+                                attachState.value(surface)
                                 applyFeedTransform(view, verticalState.value, phonePortrait)
                             }
 

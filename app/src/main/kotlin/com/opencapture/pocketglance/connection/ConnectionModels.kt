@@ -24,10 +24,24 @@ data class FoundCameraRow(
     val title: String,
 )
 
+/**
+ * Live monitor chrome from OpenCine CameraStatus.
+ * Defaults when wired or not yet reporting.
+ */
+data class MonitorChrome(
+    val shootingModeLabel: String = "—",
+    val formatChip: String = "—",
+    val colorChip: String = "—",
+    val isRecording: Boolean = false,
+    val recordElapsedSec: Int = 0,
+    val recordRemainingSec: Int = 0,
+)
+
 data class ConnectionState(
     val mode: ConnectionMode? = null,
     val phase: ConnectionPhase = ConnectionPhase.Idle,
     val message: String = "",
     val cameraVertical: Boolean = false,
     val foundCameras: List<FoundCameraRow> = emptyList(),
+    val chrome: MonitorChrome = MonitorChrome(),
 )

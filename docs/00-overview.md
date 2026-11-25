@@ -2,7 +2,7 @@
 
 ## 是什么
 
-PocketGlance（应用显示名：**Pocket 一览**）是一个精简的 Android 监视器应用：
+PocketGlance（应用显示名：**Pocket 监视器**）是一个精简的 Android 监视器应用：
 
 - 连接 DJI Osmo Pocket（主路径：无线 SoftAP）
 - 实时监视相机画面（HEVC → Surface）

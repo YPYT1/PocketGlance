@@ -120,7 +120,8 @@
 | `Strings` (`GlanceCopy`) | mode/startup/kind 中文标签 |
 | `HomeScreen` | 连接入口、状态面板；入口进设置 |
 | `SettingsScreen` | 默认连接：上次 / 无线 / 有线 |
-| `MonitorScreen` | 监视 HUD（不负责画面）；可进设置 |
+| `MonitorScreen` | 监视 HUD（模式/清晰度/录制等）；可进设置 |
+| `MonitorChromeLabels` | CameraStatus → 中文 HUD 芯片 |
 | `GalleryScreen` | 过滤网格 + 简单预览 Dialog |
 | `LiveFeedHost` | TextureView + Surface 生命周期 + 变换矩阵 |
 | `LivePerformance` | 常亮与高刷 |

@@ -4,10 +4,12 @@ import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.view.Surface
 import com.opencapture.opencine.dji.PocketCameraSession
+import com.opencapture.opencine.vocabulary.CameraStatus
 import com.opencapture.opencine.vocabulary.ConnectionPhase as DjiPhase
 import com.opencapture.opencine.vocabulary.FoundCamera
 import com.opencapture.pocketglance.session.GlanceSessionHost
 import com.opencapture.pocketglance.session.SwiftCoreBootstrap
+import com.opencapture.pocketglance.ui.MonitorChromeLabels
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -79,10 +81,11 @@ class WirelessSoftApTransport(
             ) {
                 pendingSurface?.let(existing::attachSurface)
                 _state.value =
-                    mapPhase(
+                    mapState(
                         existing.phase,
                         existing.decoder.isVerticalPicture.value,
                         existing.found.value,
+                        existing.chromeStatus.value,
                     )
                 return
             }
@@ -104,11 +107,15 @@ class WirelessSoftApTransport(
         pendingSurface?.let(created::attachSurface)
         observeJob =
             scope.launch {
-                combine(created.phaseFlow, created.decoder.isVerticalPicture, created.found) {
-                    phase, vertical, found ->
-                    Triple(phase, vertical, found)
-                }.collectLatest { (phase, vertical, found) ->
-                    _state.value = mapPhase(phase, vertical, found)
+                combine(
+                    created.phaseFlow,
+                    created.decoder.isVerticalPicture,
+                    created.found,
+                    created.chromeStatus,
+                ) { phase, vertical, found, chrome ->
+                    Quad(phase, vertical, found, chrome)
+                }.collectLatest { (phase, vertical, found, chrome) ->
+                    _state.value = mapState(phase, vertical, found, chrome)
                     if (phase == DjiPhase.LIVE) {
                         val id = created.connectedCamera?.id ?: found.firstOrNull()?.id
                         if (id != null && id != reportedLiveCamera) {
@@ -162,10 +169,11 @@ class WirelessSoftApTransport(
         reportedLiveCamera = null
     }
 
-    private fun mapPhase(
+    private fun mapState(
         phase: DjiPhase,
         cameraVertical: Boolean,
         found: List<FoundCamera>,
+        status: CameraStatus,
     ): ConnectionState {
         val rows =
             found.map {
@@ -197,6 +205,9 @@ class WirelessSoftApTransport(
             message = message,
             cameraVertical = cameraVertical,
             foundCameras = rows,
+            chrome = MonitorChromeLabels.from(status),
         )
     }
+
+    private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 }

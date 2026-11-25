@@ -4,7 +4,6 @@ import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -85,8 +84,9 @@ private fun GlanceRoot(model: GlanceModel) {
 
     var pendingWireless by remember { mutableStateOf(false) }
     var didAutoOpenMonitor by remember { mutableStateOf(false) }
-    // 进监视后锁死窗口方向；翻拍只转画面，不再 relayout。
+    // Live 期间锁死窗口；先锁方向再挂 Surface，避免横竖切换拆掉 MediaCodec。
     var monitorWindowLocked by remember { mutableStateOf(false) }
+    var feedReady by remember { mutableStateOf(false) }
 
     val enableBluetooth =
         rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -130,9 +130,24 @@ private fun GlanceRoot(model: GlanceModel) {
         }
     }
 
-    LaunchedEffect(connection.phase) {
+    // Live：先按横/竖设一次方向并 LOCKED，再允许挂 TextureView、再进监视页。
+    // Live 期间去设置/相册也不改方向；只有 Idle/Failed 才回主页竖屏。
+    // 翻拍只改画面矩阵，绝不改 requestedOrientation。
+    LaunchedEffect(connection.phase, connection.cameraVertical) {
         when (connection.phase) {
             ConnectionPhase.Live -> {
+                if (!monitorWindowLocked) {
+                    feedReady = false
+                    val entry = MonitorLayout.entryActivityOrientation(connection.cameraVertical)
+                    if (activity?.requestedOrientation != entry) {
+                        activity?.requestedOrientation = entry
+                        delay(220)
+                    }
+                    activity?.requestedOrientation = MonitorLayout.LOCKED_ORIENTATION
+                    monitorWindowLocked = true
+                    delay(80)
+                    feedReady = true
+                }
                 if (!didAutoOpenMonitor) {
                     didAutoOpenMonitor = true
                     if (route != Routes.Monitor) {
@@ -143,32 +158,12 @@ private fun GlanceRoot(model: GlanceModel) {
             ConnectionPhase.Idle, ConnectionPhase.Failed -> {
                 didAutoOpenMonitor = false
                 monitorWindowLocked = false
-            }
-            else -> Unit
-        }
-    }
-
-    // 进监视：按当前 Pocket 方向设一次窗口，再 LOCKED。
-    // 直播中 cameraVertical 变化：绝不改 requestedOrientation（改了就会卡）。
-    // 离开监视（含进设置/相册）：主页竖屏。从设置返回监视时重新按规则锁定。
-    LaunchedEffect(route, connection.phase, connection.cameraVertical) {
-        val onMonitor = route == Routes.Monitor
-        when {
-            onMonitor && !monitorWindowLocked -> {
-                val entry = MonitorLayout.entryActivityOrientation(connection.cameraVertical)
-                if (activity?.requestedOrientation != entry) {
-                    activity?.requestedOrientation = entry
-                    delay(120)
-                }
-                activity?.requestedOrientation = MonitorLayout.LOCKED_ORIENTATION
-                monitorWindowLocked = true
-            }
-            !onMonitor -> {
-                monitorWindowLocked = false
+                feedReady = false
                 if (activity?.requestedOrientation != MonitorLayout.HOME_ORIENTATION) {
                     activity?.requestedOrientation = MonitorLayout.HOME_ORIENTATION
                 }
             }
+            else -> Unit
         }
     }
 
@@ -184,7 +179,7 @@ private fun GlanceRoot(model: GlanceModel) {
         }
 
     val feedVisible = route == Routes.Monitor
-    val showFeed = connection.phase == ConnectionPhase.Live
+    val showFeed = connection.phase == ConnectionPhase.Live && feedReady
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (showFeed) {

@@ -18,7 +18,7 @@
 
 ## 一句话定位
 
-**PocketGlance（Pocket 一览）** 是独立 Android 应用：用无线 SoftAP（或有线 USB 入口）连接 DJI Osmo Pocket，监视实时画面，并带一个相册标签壳。重逻辑（BLE、配对、Wi‑Fi、DUML、HEVC 解码）在兄弟仓 **OpenCine**；无线原生库 `.so` 来自 **OpenPocketCine** 的 Swift JNI facade。
+**PocketGlance（Pocket 监视器）** 是独立 Android 应用：用无线 SoftAP（或有线 USB 入口）连接 DJI Osmo Pocket，监视实时画面，并带一个相册标签壳。重逻辑（BLE、配对、Wi‑Fi、DUML、HEVC 解码）在兄弟仓 **OpenCine**；无线原生库 `.so` 来自 **OpenPocketCine** 的 Swift JNI facade。
 
 ## 仓位置约定
 

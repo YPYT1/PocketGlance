@@ -6,15 +6,15 @@
 
 ## G1 · 直播中禁止改 Activity 方向
 
-**现象**：中途改 `requestedOrientation` 会触发 relayout，打断 MediaCodec，日志里像「假重连」、画面卡死。  
+**现象**：中途改 `requestedOrientation` 会触发 relayout，打断 MediaCodec → `presented=-1` / `cfg=false` 黑屏，或日志像「假重连」。  
 
 **正确做法**：
 
-1. 进入监视：按当时 `cameraVertical` 设一次方向 → delay(~120ms) → `SCREEN_ORIENTATION_LOCKED`  
-2. Live 期间 `cameraVertical` 变化：**只**更新 `LiveFeedHost` 变换矩阵  
-3. 离开监视：恢复主页 `PORTRAIT`  
+1. **先**按当时 `cameraVertical` 设一次方向 → delay → `SCREEN_ORIENTATION_LOCKED`，**再**挂 `LiveFeedHost`（`feedReady`）  
+2. Live 期间（含去设置/相册）**绝不**改 `requestedOrientation`；翻拍只改 TextureView 矩阵  
+3. 仅 Idle/Failed 时恢复主页 `PORTRAIT`  
 
-相关：`MainActivity` 方向 `LaunchedEffect`、`MonitorLayout`、`LiveFeedHost.applyFeedTransform`。
+相关：`MainActivity`、`MonitorLayout`、`LiveFeedHost.applyFeedTransform`。
 
 ---
 
@@ -45,6 +45,16 @@ TextureView 可用后创建一个 `Surface`，销毁时 release 并 `attachSurfa
 ## G5 · 无线前必须退官方 Mimo
 
 失败文案已写：「请确认已退出官方 Mimo」。蓝牙/热点常被官方占用。调试失败时先查这个，再查权限/JNI。
+
+另：ColorOS 常把无网 SoftAP 判为 `NO_INTERNET` 并踢网；空闲后 UDP `EPERM` 会导致画面卡住。Live 时用前台服务 `LiveKeepaliveService` 保活，并关掉「Wi‑Fi 无网自动切移动网络」。
+
+## G16 · 首帧糊 / 花是 format poke
+
+Pocket 进 Live 会短暂 `4K ↔ 1080` 踢格式再拉回，编码器重开 GOP。属 OpenCine first-picture 路径，数秒后应变清晰；不是解码永久坏了。
+
+## G17 · 翻拍转屏靠竖拍编码，不靠云台倾斜
+
+`cameraVertical` 来自画面宽高（竖拍 9:16）。只拧云台、编码仍是 16:9 时，监视器不会「整屏旋转」。Activity 在 Live 中锁定，避免拆 Surface。
 
 ---
 

@@ -11,6 +11,7 @@
 | `message` | `String` | 状态/错误中文 |
 | `cameraVertical` | `Boolean` | 解码器判定竖拍画面 |
 | `foundCameras` | `List<FoundCameraRow>` | 扫描到的相机（无线） |
+| `chrome` | `MonitorChrome` | 模式/清晰度/色彩/录制时长等 HUD |
 
 来源：`GlanceModel._connection` ← 订阅当前 Transport 的 `state`。
 
