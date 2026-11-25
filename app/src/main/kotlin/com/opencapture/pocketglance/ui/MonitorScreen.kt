@@ -12,11 +12,16 @@ import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -33,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.opencapture.pocketglance.connection.ConnectionMode
 import com.opencapture.pocketglance.connection.ConnectionPhase
 import com.opencapture.pocketglance.connection.ConnectionState
 import com.opencapture.pocketglance.connection.PocketState
@@ -71,7 +77,7 @@ fun MonitorScreen(
             listOf(chrome.evChip, chrome.isoChip, chrome.wbChip)
                 .filter { it.isNotBlank() && it != "—" }
         }
-    // 竖屏顶栏信息拆两排；横屏仍一行（手机横屏一般也够宽）。
+    // 芯片两排仅竖屏；录制时长位置按手机／平板分开（见下方顶栏）。
     val splitChrome = portrait
 
     Box(modifier = Modifier.fillMaxSize().displayCutoutPadding()) {
@@ -112,24 +118,71 @@ fun MonitorScreen(
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                    // 手机横屏：系统手势区 + Material 标准 16dp，避免「断开连接」贴右边。
+                    .then(
+                        if (phone && !portrait) {
+                            Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.End))
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .padding(
+                        start = 10.dp,
+                        end = if (phone && !portrait) 16.dp else 10.dp,
+                        top = 8.dp,
+                        bottom = 8.dp,
+                    ),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            // 顶栏：芯片 + 断开；录制时长单独一行，避免和芯片抢位被遮挡。
+            // 手机竖屏：录制贴在首行芯片（D-Log2）右侧空位；手机横屏：芯片后、断开前偏左；平板保持一行靠右。
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top,
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    if (splitChrome) {
-                        ChromeChipLine(primaryChips)
-                        if (secondaryChips.isNotEmpty()) ChromeChipLine(secondaryChips)
-                    } else {
-                        ChromeChipLine(primaryChips + secondaryChips)
+                when {
+                    phone && portrait -> {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                ChromeChipLine(primaryChips, Modifier.weight(1f))
+                                if (chrome.isRecording) {
+                                    RecordingElapsedPill(elapsedSec = chrome.recordElapsedSec)
+                                }
+                            }
+                            if (secondaryChips.isNotEmpty()) ChromeChipLine(secondaryChips)
+                        }
+                    }
+                    phone && !portrait -> {
+                        // 芯片占满左侧并省略；录制时长贴在「断开」左侧约 50dp，互不重叠。
+                        ChromeChipLine(primaryChips + secondaryChips, Modifier.weight(1f))
+                        if (chrome.isRecording) {
+                            RecordingElapsedPill(
+                                elapsedSec = chrome.recordElapsedSec,
+                                modifier = Modifier.padding(end = 50.dp),
+                            )
+                        }
+                    }
+                    else -> {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            if (splitChrome) {
+                                ChromeChipLine(primaryChips)
+                                if (secondaryChips.isNotEmpty()) ChromeChipLine(secondaryChips)
+                            } else {
+                                ChromeChipLine(primaryChips + secondaryChips)
+                            }
+                        }
+                        if (chrome.isRecording) {
+                            RecordingElapsedPill(elapsedSec = chrome.recordElapsedSec)
+                        }
                     }
                 }
                 TextButton(
@@ -146,13 +199,6 @@ fun MonitorScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-            }
-
-            if (chrome.isRecording) {
-                RecordingElapsedPill(
-                    elapsedSec = chrome.recordElapsedSec,
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                )
             }
 
             val showFocus = connection.focus.available && !startingFeed
@@ -217,21 +263,24 @@ fun MonitorScreen(
                 }
             }
             TextButton(onClick = onSettings) { Text("设置", color = Color.White.copy(alpha = 0.9f)) }
-            TextButton(onClick = onGallery, enabled = !chrome.isRecording) {
-                Text("相册", color = GlanceColors.pear)
+            if (connection.mode == ConnectionMode.Wireless) {
+                TextButton(onClick = onGallery, enabled = !chrome.isRecording) {
+                    Text("相册", color = GlanceColors.pear)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ChromeChipLine(chips: List<String>) {
+private fun ChromeChipLine(chips: List<String>, modifier: Modifier = Modifier) {
     if (chips.isEmpty()) {
-        Spacer(Modifier.height(0.dp))
+        Spacer(modifier.height(0.dp))
         return
     }
     Text(
         chips.joinToString("   ·   "),
+        modifier = modifier,
         color = Color.White,
         fontSize = 13.sp,
         fontWeight = FontWeight.Medium,

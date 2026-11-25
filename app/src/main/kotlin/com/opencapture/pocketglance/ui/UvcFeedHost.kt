@@ -80,7 +80,7 @@ fun UvcFeedHost(
                 },
                 update = { view ->
                     val (w, h) = sizeState.value
-                    if (w > 0 && h > 0 && heldSurface[0] == null) {
+                    if (w > 0 && h > 0) {
                         view.surfaceTexture?.setDefaultBufferSize(w, h)
                     }
                     applyFeedTransform(view, aspectState.value, PictureRotation.Upright)

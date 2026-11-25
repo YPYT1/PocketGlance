@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * 有线「网络摄像头／UVC」会话：Pocket 4P 切到 UVC 模式后，机身作为标准 USB Video
@@ -64,32 +65,18 @@ class WiredUsbTransport(
         )
         registerDetachWatcher()
 
-        var device = seedDevice?.takeIf { isPocketUvcDevice(it) } ?: findUvcDevice()
-        if (device == null) {
-            // Pocket shows a mode picker after plugging in; its UVC interface can appear shortly after selection.
-            for (i in 0 until 8) {
-                if (closed) return
-                delay(500)
-                device = findUvcDevice()
-                if (device != null) break
+        val device = seedDevice?.takeIf { isPocketDevice(it) } ?: findPocketDevice()
+        if (device != null) {
+            boundDevice = device
+            logInterfaces(device)
+            if (isPocketUvcDevice(device)) {
+                GlanceLog.i("wired", "UVC USB device ${deviceLabel(device)}")
+            } else {
+                GlanceLog.i("wired", "Pocket USB device is not exposing a UVC interface yet")
             }
+        } else {
+            GlanceLog.i("wired", "no app-visible Pocket USB descriptor; continuing with Camera2 external discovery")
         }
-        if (device == null) {
-            fail(
-                "未检测到 Pocket 的网络摄像头。请在 Pocket 选择「网络摄像头」(2秒)，" +
-                    "再用 USB/OTG 连接本机；选择「文件传输」不会提供 UVC 画面。",
-            )
-            return
-        }
-        val uvcDevice = device
-        boundDevice = uvcDevice
-        logInterfaces(uvcDevice)
-        GlanceLog.i("wired", "uvc device ${deviceLabel(uvcDevice)}")
-        emit(
-            phase = ConnectionPhase.Connecting,
-            message = "已识别 Pocket UVC 摄像头，正在打开…",
-            pocket = PocketState.OpeningLink,
-        )
 
         if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.CAMERA) !=
             PackageManager.PERMISSION_GRANTED
@@ -107,17 +94,42 @@ class WiredUsbTransport(
         controller = created
 
         var externalIds = created.externalCameraIds()
-        repeat(8) {
-            if (closed || externalIds.isNotEmpty()) return@repeat
-            if (it == 7) return@repeat
-            delay(500)
-            externalIds = created.externalCameraIds()
-        }
-        GlanceLog.i("wired", "external cameras=${externalIds.size} ids=$externalIds")
         if (externalIds.isEmpty()) {
-            fail("没有可用的外接 UVC 摄像头。请在 Pocket 选择「网络摄像头」(2秒)；若仍未出现，当前平板系统可能没有外接摄像头 Camera HAL。")
-            return
+            emit(
+                phase = ConnectionPhase.Connecting,
+                message = "请在 Pocket 上选择「网络摄像头」(2秒)，正在等待外接摄像头…",
+                pocket = PocketState.Discovering,
+            )
+            val found = withTimeoutOrNull(4_000L) {
+                while (!closed && externalIds.isEmpty()) {
+                    delay(200)
+                    externalIds = created.externalCameraIds()
+                }
+                externalIds.isNotEmpty()
+            } == true
+            if (closed) return
+            if (!found) {
+                fail(
+                    "未检测到可用的 Pocket 网络摄像头。请确认选择了「网络摄像头」而不是「文件传输」或「仅充电」，" +
+                        "并确认平板支持 USB UVC 外接相机。",
+                )
+                return
+            }
         }
+        val uvcDevice = device
+        if (uvcDevice != null) {
+            boundDevice = uvcDevice
+            logInterfaces(uvcDevice)
+            GlanceLog.i("wired", "uvc device ${deviceLabel(uvcDevice)}")
+        } else {
+            GlanceLog.i("wired", "Camera2 external camera found without an app-visible USB descriptor")
+        }
+        emit(
+            phase = ConnectionPhase.Connecting,
+            message = "已发现外接摄像头，正在配置预览…",
+            pocket = PocketState.OpeningLink,
+        )
+        GlanceLog.i("wired", "external cameras=${externalIds.size} ids=$externalIds")
 
         // 无公开 API 把 Camera2 摄像头 id 映射回 USB 设备；单台 Pocket 场景取首个外部摄像头即可。
         val cameraId = externalIds.first()
@@ -188,8 +200,8 @@ class WiredUsbTransport(
         tearDown(IdleReason.Detached)
     }
 
-    private fun findUvcDevice(): UsbDevice? =
-        usb.deviceList?.values?.firstOrNull { isPocketUvcDevice(it) }
+    private fun findPocketDevice(): UsbDevice? =
+        usb.deviceList?.values?.firstOrNull { isPocketDevice(it) }
 
     private fun logUsbInventory() {
         val accessories = usb.accessoryList?.toList().orEmpty()
