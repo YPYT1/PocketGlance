@@ -3,25 +3,40 @@ package com.opencapture.pocketglance.ui
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.LruCache
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.util.fastAny
+import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -43,15 +58,82 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
+
+private const val VIDEO_CONTROLLER_TIMEOUT_MS = 2_000
+
+/**
+ * 访达式双指缩放：无按钮。
+ * 1x 时单指不消费手势，留给左右翻页与下滑返回；双指捏合才缩放，放大后才单指拖动。
+ */
+@Composable
+internal fun ZoomableGalleryImage(
+    bitmap: ImageBitmap,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    onTap: () -> Unit,
+    onZoomChanged: (Float) -> Unit = {},
+) {
+    var scale by remember(bitmap) { mutableFloatStateOf(1f) }
+    var offset by remember(bitmap) { mutableStateOf(Offset.Zero) }
+    LaunchedEffect(bitmap) {
+        scale = 1f
+        offset = Offset.Zero
+        onZoomChanged(1f)
+    }
+    Image(
+        bitmap = bitmap,
+        contentDescription = contentDescription,
+        modifier =
+            modifier
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = offset.x
+                    translationY = offset.y
+                }
+                .pointerInput(bitmap) {
+                    detectTapGestures(onTap = { onTap() })
+                }
+                .pointerInput(bitmap) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        do {
+                            val event = awaitPointerEvent()
+                            val pressedCount = event.changes.count { it.pressed }
+                            val zoomChange = event.calculateZoom()
+                            val panChange = event.calculatePan()
+                            val zooming = pressedCount >= 2 && abs(zoomChange - 1f) > 0.001f
+                            val panningZoomed = scale > 1.01f && pressedCount == 1 &&
+                                (abs(panChange.x) > 0.5f || abs(panChange.y) > 0.5f)
+                            if (zooming || (pressedCount >= 2 && scale > 1.01f)) {
+                                val next = (scale * zoomChange).coerceIn(1f, 5f)
+                                scale = next
+                                offset = if (next > 1.01f) offset + panChange else Offset.Zero
+                                onZoomChanged(next)
+                                event.changes.fastForEach {
+                                    if (it.pressed && it.positionChanged()) it.consume()
+                                }
+                            } else if (panningZoomed) {
+                                offset += panChange
+                                event.changes.fastForEach {
+                                    if (it.pressed && it.positionChanged()) it.consume()
+                                }
+                            }
+                            // 1x 单指：不 consume，交给 Pager / 下滑返回
+                        } while (event.changes.fastAny { it.pressed })
+                    }
+                },
+        contentScale = ContentScale.Fit,
+    )
+}
 
 @Composable
 @androidx.annotation.OptIn(UnstableApi::class)
 internal fun CameraVideo(
     item: GalleryItem,
     modifier: Modifier,
-    fullscreen: Boolean,
-    onFullscreen: (Boolean) -> Unit,
-    onToggleThumbnails: () -> Unit,
+    onUserInteract: () -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -95,17 +177,19 @@ internal fun CameraVideo(
                 factory = {
                     PlayerView(it).apply {
                         resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        setControllerHideOnTouch(false)
+                        controllerShowTimeoutMs = VIDEO_CONTROLLER_TIMEOUT_MS
+                        setControllerHideOnTouch(true)
+                        setShowNextButton(false)
+                        setShowPreviousButton(false)
                     }
                 },
                 update = { view ->
                     view.player = player
+                    view.controllerShowTimeoutMs = VIDEO_CONTROLLER_TIMEOUT_MS
                     view.setOnClickListener {
-                        if (!view.isControllerFullyVisible) view.showController()
-                        onToggleThumbnails()
+                        view.showController()
+                        onUserInteract()
                     }
-                    view.setFullscreenButtonClickListener { onFullscreen(it) }
-                    view.setFullscreenButtonState(fullscreen)
                 },
                 onRelease = { it.player = null },
             )

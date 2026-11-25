@@ -20,6 +20,11 @@ class PocketStateTest {
         assertEquals(PocketState.Monitoring, pocketStateFor(DjiPhase.LIVE, true, SessionRecoveryUi.Idle))
         assertEquals(PocketState.Recovering, pocketStateFor(DjiPhase.LIVE, true, SessionRecoveryUi.Retrying(1, 8)))
         assertEquals(PocketState.NeedsRetry, pocketStateFor(DjiPhase.LIVE, true, SessionRecoveryUi.WaitingForOperator(8)))
-        assertEquals(PocketState.NeedsRetry, pocketStateFor(DjiPhase.LIVE, true, SessionRecoveryUi.TakenOver(null)))
+    }
+
+    @Test
+    fun anotherDeviceTakingOverHasItsOwnState() {
+        assertEquals(PocketState.TakenOver, pocketStateFor(DjiPhase.LIVE, true, SessionRecoveryUi.TakenOver(null)))
+        assertEquals(PocketState.TakenOver, pocketStateFor(DjiPhase.LIVE, false, SessionRecoveryUi.TakenOver(null)))
     }
 }

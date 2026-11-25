@@ -65,6 +65,9 @@ data class MonitorChrome(
     val shootingModeLabel: String = "—",
     val formatChip: String = "—",
     val colorChip: String = "—",
+    val isoChip: String = "—",
+    val evChip: String = "—",
+    val wbChip: String = "—",
     val supportsPreviewLut: Boolean = false,
     val isRecording: Boolean = false,
     val recordElapsedSec: Int = 0,
@@ -85,4 +88,7 @@ data class ConnectionState(
     val foundCameras: List<FoundCameraRow> = emptyList(),
     val chrome: MonitorChrome = MonitorChrome(),
     val focus: MonitorFocus = MonitorFocus(),
+    // Latest stream dimensions prepare GPU buffers; pictureWidth/Height follow presented frames.
+    val sourceWidth: Int = pictureWidth,
+    val sourceHeight: Int = pictureHeight,
 )

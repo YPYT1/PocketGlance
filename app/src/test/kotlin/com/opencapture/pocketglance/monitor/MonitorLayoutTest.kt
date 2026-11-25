@@ -43,6 +43,36 @@ class MonitorLayoutTest {
     }
 
     @Test
+    fun squareFeedShowsAllFourEdgesInEitherWindowOrientation() {
+        for ((windowWidth, windowHeight) in listOf(1600f to 900f, 900f to 1600f)) {
+            for (rotation in PictureRotation.entries) {
+                assertEquals(900f to 900f, MonitorLayout.pictureSize(windowWidth, windowHeight, 1f, rotation))
+                for ((sourceX, sourceY) in listOf(0f to 0f, 0f to 1f, 1f to 0f, 1f to 1f)) {
+                    val (x, y) = MonitorLayout.screenPoint(sourceX, sourceY, windowWidth, windowHeight, 1f, rotation)
+                    val screenLeft = (windowWidth - 900f) / 2f
+                    val screenTop = (windowHeight - 900f) / 2f
+                    assertTrue(x == screenLeft || x == screenLeft + 900f)
+                    assertTrue(y == screenTop || y == screenTop + 900f)
+                    assertEquals(sourceX to sourceY, MonitorLayout.picturePoint(x, y, windowWidth, windowHeight, 1f, rotation))
+                }
+                val (blackX, blackY) = if (windowWidth > windowHeight) 10f to 450f else 450f to 10f
+                assertNull(MonitorLayout.picturePoint(blackX, blackY, windowWidth, windowHeight, 1f, rotation))
+            }
+        }
+    }
+
+    @Test
+    fun switchingBackToWideFeedKeepsTheExistingVideoFraming() {
+        val wide = 1280f / 720f
+        val square = 720f / 720f
+        val rotation = PictureRotation.Upright
+        val video = MonitorLayout.pictureSize(1920f, 1080f, wide, rotation)
+        assertEquals(1920f to 1080f, video)
+        assertEquals(1080f to 1080f, MonitorLayout.pictureSize(1920f, 1080f, square, rotation))
+        assertEquals(video, MonitorLayout.pictureSize(1920f, 1080f, wide, rotation))
+    }
+
+    @Test
     fun eitherSidewaysWidePictureIsPortraitWithoutChangingTheSource() {
         val aspect = 16f / 9f
         for (pose in listOf(PictureRotation.Left, PictureRotation.Right)) {

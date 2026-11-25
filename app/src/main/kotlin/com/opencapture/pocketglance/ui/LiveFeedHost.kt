@@ -20,10 +20,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -49,6 +49,8 @@ fun LiveFeedHost(
     foreground: Boolean,
     pictureWidth: Int,
     pictureHeight: Int,
+    sourceWidth: Int,
+    sourceHeight: Int,
     renderPlan: FeedEffectsRenderPlan,
     focus: MonitorFocus?,
     onFocus: (FocusGesture, Float, Float) -> Unit,
@@ -88,8 +90,9 @@ fun LiveFeedHost(
         )
     }
     LaunchedEffect(renderPlan) { renderer.updatePlan(renderPlan) }
-    LaunchedEffect(pictureWidth, pictureHeight) { renderer.setSourceSize(pictureWidth, pictureHeight) }
+    LaunchedEffect(sourceWidth, sourceHeight) { renderer.setSourceSize(sourceWidth, sourceHeight) }
     val aspect = pictureWidth.toFloat() / pictureHeight.coerceAtLeast(1)
+    val blackMargins = blackSides || aspect == 1f
     val transformState = rememberUpdatedState(aspect to rotation)
 
     fun updateTransform(view: TextureView, sourceAspect: Float, turn: PictureRotation) {
@@ -126,7 +129,7 @@ fun LiveFeedHost(
         modifier =
             Modifier
                 .fillMaxSize()
-                .background(if (blackSides) Color.Black else GlanceColors.ink),
+                .background(if (blackMargins) Color.Black else GlanceColors.ink),
     ) {
         if (foreground) AndroidView(
             factory = { ctx ->
@@ -201,18 +204,17 @@ fun LiveFeedHost(
         if (waitingForPicture) lastPreview?.let { bitmap ->
             Image(bitmap.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
         }
-        if (blackSides) {
+        if (blackMargins) {
             Canvas(Modifier.matchParentSize()) {
                 val (width, height) = MonitorLayout.pictureSize(size.width, size.height, aspect, rotation)
                 val visibleWidth = if (rotation.quarterTurn) height else width
-                val gutter = ((size.width - visibleWidth) / 2f).coerceAtLeast(0f)
-                if (gutter <= 0f) return@Canvas
-                val right = size.width - gutter
-                drawRect(Color.Black, size = Size(gutter, size.height))
-                drawRect(
-                    Color.Black,
-                    topLeft = Offset(right, 0f), size = Size(gutter, size.height),
-                )
+                val visibleHeight = if (rotation.quarterTurn) width else height
+                val insetX = ((size.width - visibleWidth) / 2f).coerceAtLeast(0f)
+                val insetY = ((size.height - visibleHeight) / 2f).coerceAtLeast(0f)
+                if (insetX <= 0f && insetY <= 0f) return@Canvas
+                clipRect(insetX, insetY, size.width - insetX, size.height - insetY, ClipOp.Difference) {
+                    drawRect(Color.Black)
+                }
             }
         }
         if (foreground && !waitingForPicture && focus != null) MonitorFocusLayer(aspect, rotation, focus, onFocus)

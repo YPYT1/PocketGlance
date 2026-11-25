@@ -27,6 +27,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -50,7 +52,10 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.opencapture.pocketglance.gallery.GalleryItem
 import com.opencapture.pocketglance.gallery.MediaKind
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+private const val VIDEO_THUMBNAIL_IDLE_MS = 3_000L
 
 @Composable
 internal fun GalleryPager(
@@ -77,8 +82,14 @@ internal fun GalleryPager(
         }
     }
     var showThumbnails by remember { mutableStateOf(true) }
+    var videoInteractTick by remember { mutableIntStateOf(0) }
+    var imageZoom by remember { mutableFloatStateOf(1f) }
     var dragOffset by remember { mutableStateOf(0f) }
+    val currentItem = items.getOrNull(pager.settledPage)
+    val viewingVideo = currentItem?.kind == MediaKind.Video
+
     LaunchedEffect(pager.settledPage) {
+        imageZoom = 1f
         val selected = pager.settledPage
         if (thumbnails.layoutInfo.visibleItemsInfo.none { it.index == selected }) {
             thumbnails.scrollToItem((selected - 2).coerceAtLeast(0))
@@ -86,6 +97,17 @@ internal fun GalleryPager(
     }
     LaunchedEffect(pager.settledPage, items.size, canLoadMore) {
         if (canLoadMore && pager.settledPage >= items.lastIndex - 2) onLoadMore()
+    }
+    // 视频：3 秒无点击后自动收起底部缩略图；照片点出后保持显示。
+    LaunchedEffect(showThumbnails, viewingVideo, pager.settledPage, videoInteractTick) {
+        if (!showThumbnails || !viewingVideo) return@LaunchedEffect
+        delay(VIDEO_THUMBNAIL_IDLE_MS)
+        showThumbnails = false
+    }
+
+    fun noteVideoInteract() {
+        showThumbnails = true
+        videoInteractTick += 1
     }
 
     Dialog(onDismissRequest = dismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
@@ -104,7 +126,8 @@ internal fun GalleryPager(
             scaleX = scale
             scaleY = scale
         }.background(Color.Black)
-            .pointerInput(Unit) {
+            .pointerInput(imageZoom) {
+                if (imageZoom > 1.01f) return@pointerInput
                 detectVerticalDragGestures(
                     onDragEnd = {
                         if (dragOffset >= 72.dp.toPx()) dismiss() else dragOffset = 0f
@@ -117,22 +140,42 @@ internal fun GalleryPager(
                     }
                 }
             }) {
-            HorizontalPager(state = pager, key = { items[it].id }, modifier = Modifier.weight(1f).fillMaxWidth()) { index ->
+            HorizontalPager(
+                state = pager,
+                key = { items[it].id },
+                userScrollEnabled = imageZoom <= 1.01f,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) { index ->
                 items.getOrNull(index)?.let { item ->
                     if (item.kind == MediaKind.Video && index == pager.settledPage && !pager.isScrollInProgress) {
-                        CameraVideo(item, Modifier.fillMaxSize(), !showThumbnails,
-                            onFullscreen = { showThumbnails = !it }, onToggleThumbnails = { showThumbnails = !showThumbnails }, onClose = dismiss)
+                        CameraVideo(
+                            item = item,
+                            modifier = Modifier.fillMaxSize(),
+                            onUserInteract = ::noteVideoInteract,
+                            onClose = dismiss,
+                        )
                     } else {
-                        BoxWithConstraints(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { dismiss() } }, contentAlignment = Alignment.Center) {
+                        BoxWithConstraints(
+                            Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { dismiss() } },
+                            contentAlignment = Alignment.Center,
+                        ) {
                             val image by rememberGalleryImage(item, thumbnail = item.kind == MediaKind.Video || index != pager.settledPage, thumbnailCache)
                             val picture = image.bitmap
                             if (picture != null) {
                                 val aspect = picture.width.toFloat() / picture.height
                                 val width = minOf(maxWidth, maxHeight * aspect)
-                                Image(picture, item.title, Modifier.size(width, width / aspect)
-                                    .clickable(onClickLabel = if (showThumbnails) "隐藏缩略图" else "显示缩略图") {
-                                        showThumbnails = !showThumbnails
-                                    }, contentScale = ContentScale.Fit)
+                                ZoomableGalleryImage(
+                                    bitmap = picture,
+                                    contentDescription = item.title,
+                                    modifier = Modifier.size(width, width / aspect),
+                                    onTap = {
+                                        // 照片：点一下只显示缩略图，不再点隐，也无 ripple。
+                                        showThumbnails = true
+                                    },
+                                    onZoomChanged = { zoom ->
+                                        if (index == pager.settledPage) imageZoom = zoom
+                                    },
+                                )
                             } else if (image.finished) Text("无法预览", color = Color.White)
                             else CircularProgressIndicator(color = GlanceColors.pear)
                         }
@@ -152,7 +195,11 @@ internal fun GalleryPager(
                         val active = index == pager.currentPage
                         Box(Modifier.size(width = if (active) 64.dp else 48.dp, height = 48.dp)
                             .semantics { selected = active }
-                            .clickable { scope.launch { pager.scrollToPage(index) } }, contentAlignment = Alignment.Center) {
+                            .clickable {
+                                scope.launch { pager.scrollToPage(index) }
+                                if (items.getOrNull(index)?.kind == MediaKind.Video) noteVideoInteract()
+                                else showThumbnails = true
+                            }, contentAlignment = Alignment.Center) {
                             thumbnail.bitmap?.let { Image(it, item.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                                 ?: Text(if (item.kind == MediaKind.Video) "视频" else "照片", color = Color.White)
                             if (!active) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.24f)))

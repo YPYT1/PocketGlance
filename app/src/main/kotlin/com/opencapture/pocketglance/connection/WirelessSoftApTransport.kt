@@ -17,7 +17,9 @@ import com.opencapture.opencine.vocabulary.SessionRecoveryUi
 import com.opencapture.pocketglance.session.GlanceSessionHost
 import com.opencapture.pocketglance.session.SwiftCoreBootstrap
 import com.opencapture.pocketglance.ui.MonitorChromeLabels
+import com.opencapture.pocketglance.monitor.FrameSyncedRaster
 import com.opencapture.pocketglance.monitor.PictureRotation
+import com.opencapture.pocketglance.monitor.RasterState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
@@ -50,11 +52,12 @@ class WirelessSoftApTransport(
     private val _focus = MutableStateFlow(MonitorFocus())
     val focus = _focus.asStateFlow()
 
-    private var session: PocketCameraSession? = null
+    @Volatile private var feed: ActiveFeed? = null
+    private val session: PocketCameraSession? get() = feed?.session
     private var observeJob: Job? = null
     private var trackingJob: Job? = null
     private var focusJob: Job? = null
-    private var pendingSurface: Surface? = null
+    @Volatile private var pendingSurface: Surface? = null
     private var autoConnectAttempted = false
     private var reportedLiveCamera: String? = null
     private var lastDisconnectAtMs = 0L
@@ -95,7 +98,8 @@ class WirelessSoftApTransport(
             return
         }
         // 已有会话且仍在连/已直播：只补 Surface，不重开扫描。
-        session?.let { existing ->
+        feed?.let { active ->
+            val existing = active.session
             if (existing.phase == DjiPhase.LIVE ||
                 existing.phase == DjiPhase.JOINING_WIFI ||
                 existing.phase == DjiPhase.OPENING_DATALINK ||
@@ -108,12 +112,11 @@ class WirelessSoftApTransport(
                 _state.value =
                     mapState(
                         existing.phase,
-                        existing.decoder.isVerticalPicture.value,
                         existing.decoder.hasPicture.value,
                         existing.found.value,
                         existing.chromeStatus.value,
                         existing.recoveryState.value,
-                        existing.decoder.pictureWidth to existing.decoder.pictureHeight,
+                        active.raster.state.value,
                         _state.value.cameraPoseRotation,
                     )
                 return
@@ -169,7 +172,12 @@ class WirelessSoftApTransport(
     }
 
     override fun notePresented(sourceTimestampNs: Long) {
-        if (pendingSurface?.isValid == true) session?.decoder?.notePresented(sourceTimestampNs)
+        val active = feed ?: return
+        if (pendingSurface?.isValid != true) return
+        active.raster.present(sourceTimestampNs)?.let { raster ->
+            Log.d(TAG, "live raster presented ${raster.width}x${raster.height}")
+        }
+        active.session.decoder.notePresented(sourceTimestampNs)
     }
 
     fun retryRecovery() {
@@ -288,9 +296,12 @@ class WirelessSoftApTransport(
             )
         val host = GlanceSessionHost(appContext)
         val created = PocketCameraSession(appContext, host)
-        val raster = MutableStateFlow(created.decoder.pictureWidth to created.decoder.pictureHeight)
-        created.decoder.onPictureSizeObserved = { width, height -> raster.value = width to height }
-        session = created
+        val raster = FrameSyncedRaster(created.decoder.pictureWidth, created.decoder.pictureHeight, System.nanoTime())
+        created.decoder.onPictureSizeObserved = { width, height ->
+            // Decoder output buffers use System.nanoTime() too; a queued frame from the old codec predates this report.
+            raster.observe(width, height, System.nanoTime())
+        }
+        feed = ActiveFeed(created, raster)
         trackingJob = scope.launch {
             created.trackingHud.collect { hud ->
                 val box = when (val overlay = hud.overlay) {
@@ -305,14 +316,13 @@ class WirelessSoftApTransport(
         observeJob =
             scope.launch {
                 combine(
-                    combine(created.decoder.hasPicture, raster, host.pictureRotation, ::PictureState),
+                    combine(created.decoder.hasPicture, raster.state, host.pictureRotation, ::PictureState),
                     created.phaseFlow, created.found, created.chromeStatus,
                     created.recoveryState,
                 ) { picture, phase, found, chrome, recovery ->
                     SessionState(picture, phase, found, chrome, recovery)
                 }.collectLatest { (picture, phase, found, chrome, recovery) ->
-                    val next = mapState(phase, picture.raster.first < picture.raster.second, picture.ready, found, chrome, recovery,
-                        picture.raster, picture.rotation)
+                    val next = mapState(phase, picture.ready, found, chrome, recovery, picture.raster, picture.rotation)
                     if (_state.value.pocketState != next.pocketState) {
                         Log.d(TAG, "camera phase=$phase state=${next.pocketState}")
                     }
@@ -404,20 +414,20 @@ class WirelessSoftApTransport(
         focusJob?.cancel()
         focusJob = null
         _focus.value = MonitorFocus()
-        session?.close()
-        session = null
+        val closing = feed
+        feed = null
+        closing?.session?.close()
         autoConnectAttempted = false
         reportedLiveCamera = null
     }
 
     private fun mapState(
         phase: DjiPhase,
-        cameraVertical: Boolean,
         pictureReady: Boolean,
         found: List<FoundCamera>,
         status: CameraStatus,
         recovery: SessionRecoveryUi,
-        raster: Pair<Int, Int>,
+        raster: RasterState,
         rotation: PictureRotation,
     ): ConnectionState {
         val rows =
@@ -459,10 +469,12 @@ class WirelessSoftApTransport(
             mode = mode,
             phase = glancePhase,
             message = message,
-            cameraVertical = cameraVertical,
+            cameraVertical = raster.display.width < raster.display.height,
             cameraPoseRotation = rotation,
-            pictureWidth = raster.first,
-            pictureHeight = raster.second,
+            pictureWidth = raster.display.width,
+            pictureHeight = raster.display.height,
+            sourceWidth = raster.source.width,
+            sourceHeight = raster.source.height,
             pictureReady = pictureReady,
             foundCameras = rows,
             chrome = MonitorChromeLabels.from(status),
@@ -470,7 +482,9 @@ class WirelessSoftApTransport(
         )
     }
 
-    private data class PictureState(val ready: Boolean, val raster: Pair<Int, Int>, val rotation: PictureRotation)
+    private data class ActiveFeed(val session: PocketCameraSession, val raster: FrameSyncedRaster)
+
+    private data class PictureState(val ready: Boolean, val raster: RasterState, val rotation: PictureRotation)
 
     private data class SessionState(
         val picture: PictureState,

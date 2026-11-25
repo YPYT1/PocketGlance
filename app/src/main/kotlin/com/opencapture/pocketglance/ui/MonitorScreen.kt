@@ -5,8 +5,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.displayCutoutPadding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -14,17 +16,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -33,28 +30,23 @@ import com.opencapture.pocketglance.connection.ConnectionPhase
 import com.opencapture.pocketglance.connection.ConnectionState
 import com.opencapture.pocketglance.connection.PocketState
 import com.opencapture.pocketglance.connection.MonitorFocusLock
-import com.opencapture.pocketglance.monitor.PictureRotation
 
 @Composable
 fun MonitorScreen(
     connection: ConnectionState,
-    picturePortrait: Boolean,
-    rotationOverride: PictureRotation?,
-    onRotationChange: (PictureRotation?) -> Unit,
     startingFeed: Boolean,
     onUnlockFocus: () -> Unit,
     onStopTracking: () -> Unit,
     activeLut: String?,
-    raster: String?,
     onOpenLuts: () -> Unit,
     onGallery: () -> Unit,
     onSettings: () -> Unit,
     onRetryRecovery: () -> Unit,
+    onDisconnect: () -> Unit,
     onHome: () -> Unit,
 ) {
     val chrome = connection.chrome
     val inkSoft = Color.White.copy(alpha = 0.78f)
-    var showRotation by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize().displayCutoutPadding()) {
         if (connection.phase == ConnectionPhase.Live && connection.pictureReady && startingFeed && connection.pocketState == PocketState.Monitoring) {
@@ -100,68 +92,72 @@ fun MonitorScreen(
         }
 
         Column(
-            modifier =
-                Modifier
-                    .align(Alignment.TopStart)
-                    .padding(horizontal = 10.dp, vertical = 10.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color.Black.copy(alpha = 0.4f))
-                    .padding(horizontal = 10.dp, vertical = 7.dp),
+            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                val summary = if (chrome.isPhoto) chrome.shootingModeLabel else
-                    listOf(chrome.shootingModeLabel, chrome.formatChip, chrome.colorChip).filterNot { it == "—" }.joinToString("  ")
-                Text(summary, Modifier.weight(1f, fill = false), color = Color.White, fontSize = 13.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (chrome.isRecording) {
-                    Row(
-                        Modifier.clip(RoundedCornerShape(12.dp)).background(Color.Black.copy(alpha = 0.45f))
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(Modifier.size(7.dp).clip(CircleShape).background(GlanceColors.coral))
-                        Text(MonitorChromeLabels.formatElapsed(chrome.recordElapsedSec), color = Color.White, fontSize = 13.sp, maxLines = 1)
-                    }
-                }
-                if (connection.pictureReady) {
-                    Box {
-                        TextButton(onClick = { showRotation = true }) {
-                            Text(if (picturePortrait) "竖向" else "横向", color = GlanceColors.pear, fontSize = 12.sp)
+            // 顶栏不加整条黑底：文字直接叠在画面上；录制态单独小胶囊。
+            MonitorTopBar(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                start = {
+                    val summary =
+                        listOf(
+                            chrome.shootingModeLabel,
+                            chrome.formatChip.takeIf { chrome.isPhoto || it != "—" },
+                            chrome.colorChip,
+                            chrome.evChip,
+                            chrome.isoChip,
+                            chrome.wbChip,
+                        ).filterNot { it.isNullOrBlank() || it == "—" }
+                            .joinToString("   ·   ")
+                    Text(
+                        summary,
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                center = {
+                    if (chrome.isRecording) {
+                        Row(
+                            Modifier.clip(RoundedCornerShape(12.dp)).background(Color.Black.copy(alpha = 0.45f))
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(Modifier.size(7.dp).clip(CircleShape).background(GlanceColors.coral))
+                            Text(MonitorChromeLabels.formatElapsed(chrome.recordElapsedSec), color = Color.White,
+                                fontSize = 13.sp, maxLines = 1, softWrap = false)
                         }
-                        DropdownMenu(expanded = showRotation, onDismissRequest = { showRotation = false }) {
-                            (listOf<PictureRotation?>(null) + PictureRotation.entries).forEach { rotation ->
-                                val label = rotation?.label ?: "自动识别"
-                                DropdownMenuItem(
-                                    text = { Text(if (rotation == rotationOverride) "$label（当前）" else label) },
-                                    onClick = {
-                                        onRotationChange(rotation)
-                                        showRotation = false
-                                    },
-                                )
-                            }
+                    }
+                },
+                end = {
+                    TextButton(onClick = onDisconnect, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                        Text("断开连接", color = GlanceColors.pear, fontSize = 13.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                },
+            )
+
+            val showFocus = connection.focus.available && !startingFeed
+            val focus = connection.focus
+            if (showFocus && (focus.pending || focus.lock != null || focus.notice != null || focus.trackBox != null)) {
+                Column(
+                    modifier = Modifier.clip(RoundedCornerShape(16.dp))
+                        .background(Color.Black.copy(alpha = 0.4f)).padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    when {
+                        focus.pending -> Text("正在调整对焦…", color = inkSoft, fontSize = 12.sp)
+                        focus.lock != null -> TextButton(onClick = onUnlockFocus) {
+                            Text(if (focus.lock == MonitorFocusLock.Native) "对焦已锁定 · 点此解锁" else "单次对焦保持 · 点此解除", color = GlanceColors.pear)
                         }
-                    }
-                }
-            }
-            if (chrome.isPhoto) {
-                Text(chrome.formatChip, color = inkSoft, fontSize = 12.sp)
-            }
-            raster?.let { Text("直播 $it", color = inkSoft, fontSize = 12.sp) }
-            if (connection.focus.available && !startingFeed) {
-                val focus = connection.focus
-                when {
-                    focus.pending -> Text("正在调整对焦…", color = inkSoft, fontSize = 12.sp)
-                    focus.lock != null -> TextButton(onClick = onUnlockFocus) {
-                        Text(if (focus.lock == MonitorFocusLock.Native) "对焦已锁定 · 点此解锁" else "单次对焦保持 · 点此解除", color = GlanceColors.pear)
-                    }
-                    focus.notice != null -> Text(focus.notice, color = GlanceColors.pear, fontSize = 12.sp)
-                    focus.trackBox != null -> TextButton(onClick = onStopTracking) {
-                        Text(if (focus.tracking) "正在追踪 · 停止" else "寻找目标 · 取消", color = GlanceColors.pear)
+                        focus.notice != null -> Text(focus.notice, color = GlanceColors.pear, fontSize = 12.sp)
+                        focus.trackBox != null -> TextButton(onClick = onStopTracking) {
+                            Text(if (focus.tracking) "正在追踪 · 停止" else "寻找目标 · 取消", color = GlanceColors.pear)
+                        }
                     }
                 }
             }
@@ -191,6 +187,43 @@ fun MonitorScreen(
             TextButton(onClick = onGallery, enabled = !chrome.isRecording) {
                 Text("相册", color = GlanceColors.pear)
             }
+        }
+    }
+}
+
+@Composable
+private fun MonitorTopBar(
+    modifier: Modifier,
+    start: @Composable () -> Unit,
+    center: @Composable () -> Unit,
+    end: @Composable () -> Unit,
+) {
+    Layout(
+        modifier = modifier,
+        content = {
+            Box { start() }
+            Box { center() }
+            Box { end() }
+        },
+    ) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val childConstraints = constraints.copy(minWidth = 0, minHeight = 0)
+        val recording = measurables[1].measure(childConstraints)
+        val gap = 6.dp.roundToPx()
+        // Reserve the same space on both sides of the timer, regardless of label widths.
+        val sideWidth = ((width - recording.width) / 2 - gap).coerceAtLeast(0)
+        val endButton = measurables[2].measure(
+            childConstraints.copy(maxWidth = if (recording.width > 0) sideWidth else width),
+        )
+        val summary = measurables[0].measure(
+            childConstraints.copy(maxWidth = if (recording.width > 0) sideWidth else
+                (width - endButton.width - gap).coerceAtLeast(0)),
+        )
+        val height = maxOf(summary.height, recording.height, endButton.height, constraints.minHeight)
+        layout(width, height) {
+            summary.placeRelative(0, (height - summary.height) / 2)
+            recording.placeRelative((width - recording.width) / 2, (height - recording.height) / 2)
+            endButton.placeRelative(width - endButton.width, (height - endButton.height) / 2)
         }
     }
 }

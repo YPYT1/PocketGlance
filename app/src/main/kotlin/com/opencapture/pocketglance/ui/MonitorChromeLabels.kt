@@ -2,6 +2,7 @@ package com.opencapture.pocketglance.ui
 
 import com.opencapture.opencine.vocabulary.CameraCommands
 import com.opencapture.opencine.vocabulary.CameraStatus
+import com.opencapture.opencine.vocabulary.EvComp
 import com.opencapture.pocketglance.connection.MonitorChrome
 
 /** Map OpenCine status → Chinese HUD chips for Pocket 监视器. */
@@ -11,6 +12,9 @@ object MonitorChromeLabels {
             shootingModeLabel = if (status.isPhoto) "拍照" else shootingModeZh(status.shootingMode),
             formatChip = formatChip(status),
             colorChip = if (status.isPhoto) "—" else colorZh(status.colorMode),
+            isoChip = isoChip(status),
+            evChip = EvComp.fromRaw(status.evComp)?.let { "EV ${it.label}" } ?: "—",
+            wbChip = wbChip(status),
             supportsPreviewLut = !status.isPhoto &&
                 (status.colorMode == CameraCommands.COLOR_DLOG || status.colorMode == CameraCommands.COLOR_DLOG2),
             isRecording = !status.isPhoto && status.isRecording,
@@ -82,4 +86,25 @@ object MonitorChromeLabels {
             if (status.shootingMode == CameraCommands.SHOOT_LIVE_PHOTO) "动图开" else "动图关"
         return listOf(size, aspect, formatPhotoTimer(photoTimerDelay(status)), motion).joinToString(" · ")
     }
+
+    /** Auto 时带出机身当前实测 ISO；手动只显示数值。 */
+    private fun isoChip(status: CameraStatus): String {
+        val live = status.iso.takeIf { it in 50..102_400 }
+        return when {
+            status.isoIndex == 0 && live != null -> "ISO Auto $live"
+            status.isoIndex == 0 -> "ISO Auto"
+            live != null -> "ISO $live"
+            else -> "—"
+        }
+    }
+
+    /** Auto 时带出实时色温；Custom 显示设定 Kelvin。 */
+    private fun wbChip(status: CameraStatus): String =
+        when {
+            status.wbMode == CameraCommands.WB_AUTO && status.autoWbKelvin > 0 ->
+                "WB Auto ${status.autoWbKelvin}K"
+            status.wbMode == CameraCommands.WB_AUTO -> "WB Auto"
+            status.wbKelvin > 0 -> "WB ${status.wbKelvin}K"
+            else -> "—"
+        }
 }

@@ -9,8 +9,10 @@
 | `mode` | `ConnectionMode?` | 当前路径 |
 | `phase` | `ConnectionPhase` | Idle / Connecting / Live / Failed |
 | `message` | `String` | 状态/错误中文 |
-| `cameraVertical` | `Boolean` | 解码器判定竖拍画面 |
+| `cameraVertical` | `Boolean` | 当前显示的画面是否为原生竖幅 |
 | `cameraPoseRotation` | `PictureRotation` | 从相机姿态重力投影稳定判定的预览校正角度 |
+| `pictureWidth` / `pictureHeight` | `Int` | 当前已呈现画幅的尺寸，用于画面和对焦坐标 |
+| `sourceWidth` / `sourceHeight` | `Int` | 解码器已观察到的尺寸，供 GPU 提前准备新画幅 |
 | `pictureReady` | `Boolean` | 当前解码会话曾呈现首帧，不代表此刻仍有新帧 |
 | `pocketState` | `PocketState` | 唤醒、连接及恢复进度，不是独立电源遥测 |
 | `foundCameras` | `List<FoundCameraRow>` | 扫描到的相机（无线） |
@@ -77,7 +79,7 @@ LiveFeedHost (remember heldSurface[0])
 
 销毁 TextureView → attach null → release Surface。
 换 Transport 时 Model 用 `lastSurface` 补绑。
-切换相机模式仅更新画幅和需要重建的解码器；GLES 使用同一个输出 Surface。
+切换相机画幅仍复用同一个输出 Surface。收到新码流尺寸时先准备 GPU 缓冲，保留旧画面的显示比例；只有新尺寸通知之后解码的帧进入显示链路，才更新画幅及对焦坐标。旧帧的重复绘制不触发切换。这不会缩短相机暂停发送视频的时间。
 
 拍照 HUD 从 `cam_photo_param`（以及带版本前缀的 `cam_photo_param_new`）读取画质、比例、设定延时和实时剩余秒数；动图状态从相机报告的拍摄模式判定。未收到的参数显示 `—`，与相机明确报告的「倒计时关」区分。
 

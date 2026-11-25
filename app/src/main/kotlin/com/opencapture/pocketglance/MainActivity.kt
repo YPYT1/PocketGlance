@@ -255,6 +255,8 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
                 foreground = foreground,
                 pictureWidth = connection.pictureWidth,
                 pictureHeight = connection.pictureHeight,
+                sourceWidth = connection.sourceWidth,
+                sourceHeight = connection.sourceHeight,
                 renderPlan = if (usePreviewLut) previewLuts.plan ?: FeedEffectsRenderPlan.IDENTITY else FeedEffectsRenderPlan.IDENTITY,
                 onPreviewAvailable = { previewAvailable = it },
                 focus = connection.focus.takeIf { route == Routes.Monitor && !lutPickerVisible && !startingFeed && it.available },
@@ -290,18 +292,15 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int) {
                 }
                 MonitorScreen(
                     connection = connection,
-                    picturePortrait = picturePortrait,
-                    rotationOverride = rotationOverride,
-                    onRotationChange = { rotationOverride = it },
                     startingFeed = startingFeed,
                     onUnlockFocus = { model.focus(FocusGesture.Unlock, 0f, 0f) },
                     onStopTracking = { model.focus(FocusGesture.StopTracking, 0f, 0f) },
                     activeLut = activeLut?.name,
-                    raster = if (connection.pictureReady) "${connection.pictureWidth}×${connection.pictureHeight}" else null,
                     onOpenLuts = { showLutPicker = true },
                     onGallery = { nav.navigate(Routes.Gallery) },
                     onSettings = { nav.navigate(Routes.Settings) { launchSingleTop = true } },
                     onRetryRecovery = model::retryRecovery,
+                    onDisconnect = model::disconnect,
                     onHome = { nav.popBackStack(Routes.Home, inclusive = false) },
                 )
             }

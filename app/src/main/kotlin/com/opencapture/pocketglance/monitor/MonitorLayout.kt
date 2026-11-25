@@ -51,7 +51,10 @@ object MonitorLayout {
     fun pictureSize(width: Float, height: Float, aspect: Float, rotation: PictureRotation): Pair<Float, Float> {
         if (width <= 0f || height <= 0f || aspect <= 0f) return 0f to 0f
         val portrait = isPortraitPicture(aspect, rotation)
-        if (portrait == (height > width)) return contentSizeBeforeRotation(width, height, aspect, rotation.quarterTurn)
+        // The Pocket already supplies a square picture in 1:1; fit it instead of clipping its edges to fill the screen.
+        if (aspect != 1f && portrait == (height > width)) {
+            return contentSizeBeforeRotation(width, height, aspect, rotation.quarterTurn)
+        }
         val targetAspect = if (rotation.quarterTurn) 1f / aspect else aspect
         val (fittedWidth, fittedHeight) = fittedSize(width, height, targetAspect)
         return if (rotation.quarterTurn) fittedHeight to fittedWidth else fittedWidth to fittedHeight
