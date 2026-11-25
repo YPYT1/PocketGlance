@@ -1,7 +1,17 @@
 # PocketGlance（Pocket 一览）
 
 独立 Android 工程：连接 DJI Osmo Pocket（无线 SoftAP / 有线入口）、监视画面、相册标签。  
-从 OpenPocketCine 的 `Apps/PocketGlance` 迁出，目录在：
+从 OpenPocketCine 的 `Apps/PocketGlance` 迁出。
+
+## 系统文档（给 AI / 开发者）
+
+完整架构、模块、功能、状态、构建与陷阱说明统一在：
+
+**[`docs/`](./docs/README.md)**
+
+请先读 `docs/README.md` 的阅读顺序；改行为时同步更新对应文档。
+
+## 仓布局
 
 ```text
 pocket4p/
@@ -16,7 +26,7 @@ pocket4p/
 | --- | --- |
 | 应用 UI / 连接壳 | 本仓库 `app/` |
 | DJI SoftAP、解码、权限门 | 兄弟目录 `../OpenCine/Android`（Gradle `includeBuild`） |
-| `libOpenPocketCineAndroid.so` | 已放在 `app/src/main/jniLibs/arm64-v8a/`；重建见下 |
+| `libOpenPocketCineAndroid.so` | 已放在 `app/src/main/jniLibs/arm64-v8a/`；重建见 `docs/05-build-and-native.md` |
 
 **没有**整份拷贝 OpenPocketCine 或 OpenCine 源码树。
 
@@ -29,16 +39,6 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 要求本机已有 `../OpenCine` 检出，且 `local.properties` 指向 Android SDK。
-
-## 重建 Swift JNI（可选）
-
-无线核心 `.so` 来自 OpenPocketCine 的 Android facade。若要重编：
-
-```bash
-# 在 OpenPocketCine 里 stage 后拷回
-bash ../OpenPocketCine/scripts/android-stage-swift-core.sh \
-  --output "$(pwd)/app/src/main/jniLibs/arm64-v8a"
-```
 
 ## 图标
 

@@ -1,0 +1,56 @@
+# 00 · 产品概览
+
+## 是什么
+
+PocketGlance（应用显示名：**Pocket 一览**）是一个精简的 Android 监视器应用：
+
+- 连接 DJI Osmo Pocket（主路径：无线 SoftAP）
+- 实时监视相机画面（HEVC → Surface）
+- 提供相册标签 UI（当前为样片占位，非相机真媒体）
+
+包名 / applicationId：`com.opencapture.pocketglance`  
+Debug 后缀：`.debug` → `com.opencapture.pocketglance.debug`  
+当前版本属性：`pocketglance.versionName=0.1.0`，`versionCode=1`（见根 `gradle.properties`）
+
+## 设计意图
+
+从 OpenPocketCine 的 `Apps/PocketGlance` **迁出为独立工程**，刻意做成「薄壳」：
+
+| 本仓负责 | 不在本仓 |
+| --- | --- |
+| Compose UI、导航、权限申请编排 | DUML / SoftAP / 解码实现细节 |
+| 连接模式抽象（无线 / 有线） | 完整操作台（曝光、云台、Face AF 等） |
+| 监视页方向策略与画面变换 | 官方 Mimo 替代的全部功能 |
+| 本地偏好（启动默认、上次相机） | 真实相机相册拉取（尚未接） |
+| 预置 `jniLibs` 打包 | 拷贝整份 OpenCine / OpenPocketCine 源码 |
+
+## 目标设备与约束
+
+- **minSdk 29**，**targetSdk 36**，**compileSdk** 由 OpenCine 版本目录提供
+- **仅 arm64-v8a**（NDK abiFilters + 预置 jniLibs）
+- 需要真实手机蓝牙 + Wi‑Fi；无线连接前通常要退出官方 **DJI Mimo**
+- `usesCleartextTraffic=true`（相机 SoftAP 无 TLS）
+
+## 三个界面
+
+1. **主页（Home）**：选无线/有线、看连接状态、设「启动默认」、选发现的相机  
+2. **监视（Monitor）**：全屏看直播 + 断开/回连接/进相册；画面由根级 `LiveFeedHost` 提供  
+3. **相册（Gallery）**：按 图片/视频/动图 过滤的网格（样片数据）
+
+## 与姊妹产品关系
+
+- **OpenPocketCine**：完整专业监视器；PocketGlance 复用其 Android Swift JNI（`libOpenPocketCineAndroid.so`），不是再写一套原生协议。
+- **OpenCine/Android**：Kotlin 模块库（`dji`、`decoder`、`appkit` 等）；PocketGlance 通过 `includeBuild` 依赖，不 vendor 源码。
+
+## 当前能力成熟度（摘要）
+
+| 能力 | 状态 |
+| --- | --- |
+| 无线发现 → 配对 → SoftAP → 直播 | ✅ 可用（依赖 OpenCine + JNI） |
+| 监视方向锁定 + 翻拍旋转画面 | ✅ 可用 |
+| 有线 USB AOA 检测 | ⚠️ 能枚举附件，**尚未接直播解码** |
+| 相册 | ⚠️ UI + 分类器就绪，**数据为样片** |
+| 冷启动自动按「启动默认」连接 | ⚠️ 偏好可存，**MainActivity 未自动触发** |
+| 人脸对焦 / 快门角偏好 | ❌ Host 里显式关掉 |
+
+细节见 [08-roadmap-gaps.md](./08-roadmap-gaps.md)。

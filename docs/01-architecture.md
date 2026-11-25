@@ -1,0 +1,102 @@
+# 01 · 架构
+
+## 仓间边界
+
+```text
+┌──────────────────────────── PocketGlance ────────────────────────────┐
+│  app/ (Compose UI + GlanceModel + Transport 编排)                      │
+│  jniLibs/arm64-v8a/*.so  ← 预置，来自 OpenPocketCine Swift facade       │
+└───────────────┬───────────────────────────────┬──────────────────────┘
+                │ Gradle includeBuild           │ System.loadLibrary
+                ▼                               ▼
+┌───────────────────────────┐     ┌─────────────────────────────────────┐
+│ ../OpenCine/Android       │     │ libOpenPocketCineAndroid.so (+Swift)│
+│  :dji :decoder :media     │     │ 实现 DjiNative JNI 导出               │
+│  :core :platform :appkit  │     └─────────────────────────────────────┘
+│  :native-runtime …        │
+└───────────────────────────┘
+```
+
+`settings.gradle.kts` 要点：
+
+- `includeBuild("../OpenCine/Android/build-logic")`：插件与版本目录
+- `includeBuild("../OpenCine/Android")`：用 `dependencySubstitution` 把坐标  
+  `com.opencapture.opencine:{core,media,platform,decoder,native-runtime,dji,vulkan,appkit,media3}`  
+  指到对应 project
+- **不**拷贝 OpenCine / OpenPocketCine 源码进本仓
+
+## 应用内分层
+
+```text
+MainActivity / GlanceRoot          UI 导航、权限、方向、LiveFeed 挂载
+        │
+GlanceModel (AndroidViewModel)     单一应用状态枢纽
+        │
+ConnectionTransport                连接路径抽象
+   ├── WirelessSoftApTransport     → PocketCameraSession (OpenCine)
+   └── WiredUsbTransport           → UsbManager 枚举（直播未接）
+        │
+GlanceSessionHost                  实现 PocketSessionHost（精简：无 Face AF）
+        │
+OpenCine PocketCameraSession       BLE → 配对 → SoftAP → datalink → HevcDecoder
+        │
+Surface (TextureView)              LiveFeedHost 一生一次创建
+```
+
+### 职责切分原则
+
+| 层 | 可以做 | 不应做 |
+| --- | --- | --- |
+| UI (`ui/`) | 展示、触发回调 | 直接持有 `PocketCameraSession` |
+| `GlanceModel` | 选 Transport、转发 Surface、偏好 | 解码细节、BLE |
+| Transport | 映射阶段文案、调会话 API | Compose |
+| `GlanceSessionHost` | 给会话提供 prefs/诊断/人脸口 | 业务 UI |
+| OpenCine | 协议与解码 | PocketGlance 品牌 UI |
+
+## 直播画面路径（关键）
+
+1. `ConnectionPhase.Live` 时，根 `Box` 挂载 `LiveFeedHost`（**在 NavHost 之外**）。
+2. `TextureView` 在 `onSurfaceTextureAvailable` 时创建 **唯一** `Surface`，交给 `GlanceModel.attachSurface` → 当前 Transport → `PocketCameraSession.attachSurface` → `HevcDecoder`。
+3. 监视页本身只画 HUD 控件；`visible=false` 时 feed 仍可存在但 alpha=0（离开监视路由时）。
+4. 进监视时：按横/竖拍设一次 `requestedOrientation`，再设为 `SCREEN_ORIENTATION_LOCKED`。  
+   **直播中 Pocket 翻拍：只改 TextureView 矩阵，绝不改 Activity 方向。**
+
+## 连接阶段映射
+
+OpenCine `vocabulary.ConnectionPhase` → 本应用 `ConnectionPhase`：
+
+| OpenCine | PocketGlance | 用户文案要点 |
+| --- | --- | --- |
+| IDLE | Idle | — |
+| SCANNING … OPENING_DATALINK | Connecting | 扫描/蓝牙/配对/确认/读热点/加 Wi‑Fi/开通道 |
+| LIVE | Live | 自动进监视（一次） |
+| FAILED | Failed | 提示退出 Mimo、靠近重试 |
+
+本应用把十余个细粒度阶段折叠成四个，方便主页 UI。
+
+## 权限与系统能力
+
+无线路径需要：
+
+1. **发现权限门**（OpenCine `DiscoveryPermissions` + `rememberPermissionGate`）  
+   - API 31+：`BLUETOOTH_SCAN` + `BLUETOOTH_CONNECT`  
+   - API 29–30：`ACCESS_FINE_LOCATION`（且系统定位服务常需开启）
+2. **蓝牙已打开**（否则弹系统开启蓝牙）
+3. JNI 已加载（`SwiftCoreBootstrap`，在 `GlanceApp.onCreate` 预热）
+
+Manifest 另声明 Wi‑Fi / 附近设备 / USB accessory 等；USB 用 `usb_accessory_filter.xml` 匹配 DJI Osmo Pocket 类附件。
+
+## 导航结构
+
+路由常量（`MainActivity` 内）：
+
+- `home` → `HomeScreen`
+- `monitor` → `MonitorScreen`
+- `gallery` → `GalleryScreen`
+
+`Live` 且尚未自动打开过监视 → `navigate(monitor)`。断开从监视回 `home`。
+
+## 性能与前台策略
+
+- `LivePerformanceGate`：直播时 `FLAG_KEEP_SCREEN_ON` + 尽量锁最高刷新率 DisplayMode  
+- SoftAP 的 `WIFI_MODE_FULL_LOW_LATENCY` 由 OpenCine `PocketCameraSession` 持有，本仓不重复申请
