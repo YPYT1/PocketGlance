@@ -2,7 +2,7 @@
 
 ## 前置条件
 
-1. 目录布局：本仓与 `../OpenCine` 同级（`pocket4p/OpenCine`）  
+1. OpenCine 检出：默认 `../OpenCine-tasks/pocketglance-photo`，也可通过 `-Popencine.root=...` 指向包含同等修复的 OpenCine 检出。当前工作树改动尚未合入 OpenCine。
 2. `local.properties` 指向本机 Android SDK（已 gitignore）  
 3. NDK **28.2.13676358**（`app/build.gradle.kts` 写死）  
 4. JDK 17  
@@ -33,6 +33,14 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - `jniLibs.srcDirs("src/main/jniLibs")`  
 - Compose + BuildConfig  
 - minify release 当前 **关闭**  
+
+## Log 预览
+
+监视器默认直接显示相机送来的直播，不自动套 LUT。视频监视器的「LUT」中可搜索、选择内置滤镜；「原始直播」恢复直出。也可通过「导入 .cube」添加自定义文件。自定义列表仅在应用运行期间保留。支持 2–65 点立方表（65 点重采样到 64 点）；D-Log M 的 LUT 用于 D-Log2 不保证色彩准确。
+
+在本机，Gradle 从用户提供的温影工坊文件夹生成内置资源，或通过 `-Ppocketglance.lutPack=/path/to/pack` 指定来源。打包需要 Python 3 和 NumPy。找不到默认目录时仍可构建不含该内置包的版本。原始 LUT 不进 Git；发布含第三方 LUT 的 APK 前需确认授权。
+
+本地 LUT 只影响显示，不修改相机、录制文件或机身的「预览还原」开关；拍照模式不应用 LUT。HUD 同时显示实际收到的直播分辨率，不将录制规格误当作直播清晰度。
 
 ## 依赖（应用直接声明）
 

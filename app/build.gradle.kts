@@ -8,6 +8,25 @@ val supportedAndroidAbi = "arm64-v8a"
 val resolvedVersionCode: Int =
     (findProperty("versionCode") ?: property("pocketglance.versionCode")).toString().toInt()
 val resolvedVersionName: String = property("pocketglance.versionName").toString()
+val suppliedLutPack = providers.gradleProperty("pocketglance.lutPack").orNull?.let(::file)
+    ?: file("${System.getProperty("user.home")}/Downloads/2 大疆Dlog-M专用LUT【温影工坊】")
+abstract class PackPreviewLuts @javax.inject.Inject constructor(
+    private val executor: org.gradle.process.ExecOperations,
+) : DefaultTask() {
+    @get:InputDirectory abstract val source: DirectoryProperty
+    @get:InputFile abstract val script: RegularFileProperty
+    @get:OutputDirectory abstract val output: DirectoryProperty
+
+    @TaskAction fun pack() {
+        executor.exec { commandLine("python3", script.get().asFile, source.get().asFile, output.get().asFile) }
+    }
+}
+
+val packPreviewLuts by tasks.registering(PackPreviewLuts::class) {
+    source.set(suppliedLutPack)
+    script.set(rootProject.file("scripts/pack-built-in-luts.py"))
+    output.set(layout.buildDirectory.dir("generated/previewLutAssets"))
+}
 
 android {
     namespace = "com.opencapture.pocketglance"
@@ -63,6 +82,10 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+}
+
+androidComponents.onVariants { variant ->
+    if (suppliedLutPack.isDirectory) variant.sources.assets?.addGeneratedSourceDirectory(packPreviewLuts, PackPreviewLuts::output)
 }
 
 dependencies {

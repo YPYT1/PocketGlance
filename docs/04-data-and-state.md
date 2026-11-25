@@ -61,7 +61,7 @@
 路由与业务相位耦合：
 
 - `phase → Live` 且 `!didAutoOpenMonitor` → 进 `monitor`  
-- Live 时启用窗口传感器方向；`Idle` / `Failed` 时恢复竖屏并重置 `didAutoOpenMonitor`。
+- Live 时启用窗口传感器方向；非 Live 时手机首页仍为竖屏，平板跟随系统方向。宽屏平板首页双栏，手机仍为单栏。`Idle` / `Failed` 时重置 `didAutoOpenMonitor`。
 
 ---
 
@@ -76,6 +76,13 @@ LiveFeedHost (remember heldSurface[0])
 
 销毁 TextureView → attach null → release Surface。
 换 Transport 时 Model 用 `lastSurface` 补绑。
+切换相机模式仅更新画幅和需要重建的解码器；GLES 使用同一个输出 Surface。
+
+拍照 HUD 从 `cam_photo_param`（以及带版本前缀的 `cam_photo_param_new`）读取画质、比例、设定延时和实时剩余秒数；动图状态从相机报告的拍摄模式判定。未收到的参数显示 `—`，与相机明确报告的「倒计时关」区分。
+
+支持对焦的 Pocket 直播：画面单击发起对焦，双击发起 ActiveTrack，静止长按 1.5 秒尝试锁焦。坐标会按直播裁切和旋转换算；以相机回复为准，不将未确认的锁定显示成成功。单击其他位置、双击追踪或按「点此解锁」会先尝试解除本次锁定。
+
+首帧后短暂显示「正在稳定直播画面」，码流和解码继续运行。这只避开刚接通时的低码率画面，不会改变无线链路或提高相机输出的分辨率。
 
 ---
 

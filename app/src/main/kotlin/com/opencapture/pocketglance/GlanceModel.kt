@@ -1,20 +1,31 @@
 package com.opencapture.pocketglance
 
 import android.app.Application
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.view.Surface
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.opencapture.opencine.media.FeedEffectsRenderPlan
+import com.opencapture.opencine.media.MonitorLUTCube
 import com.opencapture.pocketglance.connection.ConnectionMode
 import com.opencapture.pocketglance.connection.ConnectionPhase
 import com.opencapture.pocketglance.connection.ConnectionState
 import com.opencapture.pocketglance.connection.ConnectionTransport
 import com.opencapture.pocketglance.connection.GlancePrefs
+import com.opencapture.pocketglance.connection.FocusGesture
 import com.opencapture.pocketglance.connection.StartupPreference
 import com.opencapture.pocketglance.connection.WiredUsbTransport
 import com.opencapture.pocketglance.connection.WirelessSoftApTransport
 import com.opencapture.pocketglance.gallery.GalleryItem
 import com.opencapture.pocketglance.gallery.MediaKind
 import com.opencapture.pocketglance.gallery.MediaKindClassifier
+import com.opencapture.pocketglance.ui.PreviewLut
+import com.opencapture.pocketglance.ui.parsePreviewCube
+import com.opencapture.pocketglance.ui.previewLook
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +36,16 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+
+internal data class PreviewLutState(
+    val entries: List<PreviewLut> = emptyList(),
+    val selected: PreviewLut? = null,
+    val plan: FeedEffectsRenderPlan? = null,
+    val loading: PreviewLut? = null,
+    val importing: Boolean = false,
+    val message: String? = null,
+)
 
 class GlanceModel(app: Application) : AndroidViewModel(app) {
     private val prefs = GlancePrefs(app)
@@ -37,6 +58,89 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
 
     private val _connection = MutableStateFlow(ConnectionState())
     val connection: StateFlow<ConnectionState> = _connection.asStateFlow()
+
+    private val _previewLuts = MutableStateFlow(PreviewLutState())
+    internal val previewLuts = _previewLuts.asStateFlow()
+    private var lutSelectionJob: kotlinx.coroutines.Job? = null
+
+    init {
+        viewModelScope.launch {
+            val builtIns = withContext(Dispatchers.IO) {
+                try {
+                    app.assets.open("built-in-luts/catalog.tsv").bufferedReader().useLines { lines ->
+                        lines.mapNotNull { line ->
+                            val fields = line.split('\t', limit = 3)
+                            if (fields.size == 3) PreviewLut("built-in-luts/${fields[0]}", fields[2], fields[1]) else null
+                        }.toList()
+                    }
+                } catch (_: IOException) {
+                    emptyList()
+                }
+            }
+            _previewLuts.value = _previewLuts.value.copy(entries = builtIns + _previewLuts.value.entries)
+        }
+    }
+
+    internal fun selectPreviewLut(lut: PreviewLut?) {
+        lutSelectionJob?.cancel()
+        if (lut == null) {
+            _previewLuts.value = _previewLuts.value.copy(selected = null, plan = null, loading = null, message = null)
+            return
+        }
+        lutSelectionJob = viewModelScope.launch {
+            _previewLuts.value = _previewLuts.value.copy(loading = lut, message = null)
+            try {
+                val plan = withContext(Dispatchers.IO) {
+                    val app = getApplication<Application>()
+                    val cube = if (lut.category == null) {
+                        app.contentResolver.openInputStream(Uri.parse(lut.id))?.bufferedReader()?.use(::parsePreviewCube)
+                    } else {
+                        app.assets.open(lut.id).use { MonitorLUTCube.fromPacked(it.readBytes()) }
+                    }
+                    previewLook(cube ?: error("Cannot open LUT"))
+                }
+                _previewLuts.value = _previewLuts.value.copy(selected = lut, plan = plan, loading = null)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                val hint = if (lut.category == null) "请选择有效的 3D .cube 文件。" else "内置资源无法打开。"
+                _previewLuts.value = _previewLuts.value.copy(loading = null, message = "无法读取「${lut.name}」。$hint")
+            }
+        }
+    }
+
+    internal fun importPreviewLuts(uris: List<Uri>) {
+        if (uris.isEmpty() || _previewLuts.value.importing) return
+        viewModelScope.launch {
+            _previewLuts.value = _previewLuts.value.copy(importing = true, message = null)
+            val accepted = mutableListOf<PreviewLut>()
+            val existing = _previewLuts.value.entries
+            var errors = 0
+            for (uri in uris.distinct()) {
+                if (existing.any { it.id == uri.toString() }) continue
+                try {
+                    accepted += withContext(Dispatchers.IO) {
+                        val resolver = getApplication<Application>().contentResolver
+                        val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                            if (it.moveToFirst()) it.getString(0) else null
+                        } ?: uri.lastPathSegment.orEmpty()
+                        require(name.endsWith(".cube", ignoreCase = true))
+                        PreviewLut(uri.toString(), name.dropLast(5))
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    errors++
+                }
+            }
+            _previewLuts.value = _previewLuts.value.copy(entries = _previewLuts.value.entries + accepted, importing = false,
+                message = when {
+                    errors > 0 -> "已添加 ${accepted.size} 个，跳过 $errors 个。请选择 3D .cube 文件。"
+                    accepted.isEmpty() -> "所选文件已导入。"
+                    else -> "已导入 ${accepted.size} 个。请选择一个 LUT 预览。"
+                })
+        }
+    }
 
     private val _gallery = MutableStateFlow(sampleGallery())
     val gallery: StateFlow<List<GalleryItem>> = _gallery.asStateFlow()
@@ -94,7 +198,12 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
                 transport = next
                 observeJob =
                     viewModelScope.launch {
-                        next.state.collect { _connection.value = it }
+                        if (next is WirelessSoftApTransport) {
+                            combine(next.state, next.focus) { connection, focus -> connection.copy(focus = focus) }
+                                .collect { _connection.value = it }
+                        } else {
+                            next.state.collect { _connection.value = it }
+                        }
                     }
                 prefs.setLastMode(mode)
                 liveSurface()?.let(next::attachSurface)
@@ -133,6 +242,10 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
 
     fun retryRecovery() {
         (transport as? WirelessSoftApTransport)?.retryRecovery()
+    }
+
+    fun focus(gesture: FocusGesture, x: Float, y: Float) {
+        (transport as? WirelessSoftApTransport)?.focus(gesture, x, y)
     }
 
     private fun liveSurface(): Surface? =

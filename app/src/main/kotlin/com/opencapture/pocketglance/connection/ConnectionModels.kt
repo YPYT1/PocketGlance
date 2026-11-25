@@ -1,5 +1,21 @@
 package com.opencapture.pocketglance.connection
 
+import com.opencapture.opencine.vocabulary.TrackingBox
+
+enum class FocusGesture { Tap, Track, Hold, Unlock, StopTracking }
+
+enum class MonitorFocusLock { Native, SingleAf, PreviouslySingleAf }
+
+data class MonitorFocus(
+    val available: Boolean = false,
+    val point: Pair<Float, Float>? = null,
+    val lock: MonitorFocusLock? = null,
+    val pending: Boolean = false,
+    val trackBox: TrackingBox? = null,
+    val tracking: Boolean = false,
+    val notice: String? = null,
+)
+
 enum class ConnectionMode {
     Wireless,
     Wired,
@@ -47,9 +63,14 @@ data class MonitorChrome(
     val shootingModeLabel: String = "—",
     val formatChip: String = "—",
     val colorChip: String = "—",
+    val logPreviewLabel: String? = null,
     val isRecording: Boolean = false,
     val recordElapsedSec: Int = 0,
     val recordRemainingSec: Int = 0,
+    val isPhoto: Boolean = false,
+    val photoTimerRemainingSeconds: Int = 0,
+    /** 完成一张静图后递增，驱动快门闪屏。 */
+    val photoCaptureCount: Int = 0,
 )
 
 data class ConnectionState(
@@ -57,8 +78,11 @@ data class ConnectionState(
     val phase: ConnectionPhase = ConnectionPhase.Idle,
     val message: String = "",
     val cameraVertical: Boolean = false,
+    val pictureWidth: Int = 1280,
+    val pictureHeight: Int = 720,
     val pictureReady: Boolean = false,
     val pocketState: PocketState = PocketState.Unknown,
     val foundCameras: List<FoundCameraRow> = emptyList(),
     val chrome: MonitorChrome = MonitorChrome(),
+    val focus: MonitorFocus = MonitorFocus(),
 )

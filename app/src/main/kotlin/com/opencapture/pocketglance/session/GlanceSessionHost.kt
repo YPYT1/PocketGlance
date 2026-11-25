@@ -1,9 +1,12 @@
 package com.opencapture.pocketglance.session
 
 import android.content.Context
+import android.util.Log
+import com.opencapture.opencine.dji.DumlFrame
 import com.opencapture.opencine.dji.FaceDetectorPort
 import com.opencapture.opencine.dji.FaceFrame
 import com.opencapture.opencine.dji.PocketSessionHost
+import com.opencapture.opencine.dji.StatusExtras
 import com.opencapture.opencine.media.FeedIncidentBreadcrumb
 import com.opencapture.opencine.media.FeedIncidentRecorder
 import com.opencapture.opencine.media.FeedIncidentSessionContext
@@ -71,6 +74,29 @@ class GlanceSessionHost(context: Context) : PocketSessionHost {
     override val appBuild: String get() = BuildConfig.VERSION_CODE.toString()
     override val sourceRevision: String get() = "glance"
     override val debugBuild: Boolean get() = BuildConfig.DEBUG
+
+    private val lastCameraReports = mutableMapOf<String, String>()
+
+    override fun observeCameraFrame(frame: DumlFrame) {
+        if (!debugBuild) return
+        if (frame.key in FOCUS_REPLIES && frame.flags and 0x80 != 0) {
+            val reply = frame.payload.firstOrNull()?.toInt()?.and(0xFF)
+            Log.d("GlanceFocus", "reply=${frame.key.toString(16)} status=$reply")
+        }
+        val item = if (frame.key == 0x0099) StatusExtras.parseSubscribe(frame.payload) else null
+        val key = item?.name ?: frame.key.toString(16)
+        val value = when {
+            item != null && (key.startsWith("cam_photo") || key == "cam_image_effect" || key.contains("live_photo")) ->
+                item.value.take(36).joinToString("") { "%02x".format(it) }
+            frame.key == 0x0280 -> frame.payload.getOrNull(57)?.let { "%02x".format(it) } ?: return
+            else -> return
+        }
+        if (lastCameraReports.put(key, value) != value) Log.d("GlanceCameraState", "$key $value")
+    }
+
+    private companion object {
+        val FOCUS_REPLIES = setOf(0x0230, 0x0232, 0x0268, 0x02A6)
+    }
 
     override fun createFaceDetector(): FaceDetectorPort =
         object : FaceDetectorPort {

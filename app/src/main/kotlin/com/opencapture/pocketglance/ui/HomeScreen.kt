@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,12 +16,18 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cable
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -28,6 +35,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import com.opencapture.pocketglance.connection.ConnectionPhase
 import com.opencapture.pocketglance.connection.ConnectionState
@@ -50,17 +59,22 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onRequestPermission: () -> Unit,
 ) {
-    Column(
+    val tablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
+    BoxWithConstraints(
         modifier =
             Modifier
                 .fillMaxSize()
                 .background(GlanceColors.canvas)
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+                .verticalScroll(rememberScrollState()),
+        contentAlignment = Alignment.TopCenter,
     ) {
+        val twoColumns = tablet && maxWidth >= 840.dp
+        Column(
+            modifier = Modifier.widthIn(max = 1120.dp).fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -78,11 +92,13 @@ fun HomeScreen(
                 )
             }
             TextButton(onClick = onOpenSettings) {
+                Icon(Icons.Default.Settings, contentDescription = null, tint = GlanceColors.azure, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(7.dp))
                 Text("设置", color = GlanceColors.azure)
             }
         }
 
-        StatusPanel(
+        val statusPanel: @Composable () -> Unit = { StatusPanel(
             connection = connection,
             permissionHint = permissionHint,
             onPickCamera = onPickCamera,
@@ -90,27 +106,27 @@ fun HomeScreen(
             onRetryRecovery = onRetryRecovery,
             onOpenMonitor = onOpenMonitor,
             onRequestPermission = onRequestPermission,
-        )
+        ) }
 
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        val connectPanel: @Composable () -> Unit = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("现在连接", style = MaterialTheme.typography.titleLarge)
             ConnectTile(
                 title = "无线连接",
                 subtitle = "蓝牙配对后加入相机热点",
                 accent = GlanceColors.pear,
-                onInk = true,
+                icon = Icons.Default.Wifi,
                 onClick = onConnectWireless,
             )
             ConnectTile(
                 title = "有线连接",
                 subtitle = "USB 线直连（需支持附件模式）",
                 accent = GlanceColors.azure,
-                onInk = false,
+                icon = Icons.Default.Cable,
                 onClick = onConnectWired,
             )
-        }
+        } }
 
-        Box(
+        val settingsPanel: @Composable () -> Unit = { Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
@@ -127,9 +143,24 @@ fun HomeScreen(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
+        } }
+
+        if (twoColumns) {
+            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                Column(Modifier.weight(1f)) { connectPanel() }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    statusPanel()
+                    settingsPanel()
+                }
+            }
+        } else {
+            statusPanel()
+            connectPanel()
+            settingsPanel()
         }
 
         Spacer(Modifier.height(8.dp))
+        }
     }
 }
 
@@ -254,28 +285,27 @@ private fun ConnectTile(
     title: String,
     subtitle: String,
     accent: androidx.compose.ui.graphics.Color,
-    onInk: Boolean,
+    icon: ImageVector,
     onClick: () -> Unit,
 ) {
-    Column(
+    Row(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(22.dp))
-                .background(accent)
+                .background(GlanceColors.surface)
+                .border(1.dp, GlanceColors.hairline, RoundedCornerShape(22.dp))
                 .clickable(onClick = onClick)
                 .padding(horizontal = 20.dp, vertical = 22.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            title,
-            style = MaterialTheme.typography.titleLarge,
-            color = if (onInk) GlanceColors.ink else GlanceColors.surface,
-        )
-        Text(
-            subtitle,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (onInk) GlanceColors.inkMuted else GlanceColors.surface.copy(alpha = 0.9f),
-        )
+        Box(Modifier.size(46.dp).clip(RoundedCornerShape(15.dp)).background(accent), contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = if (accent == GlanceColors.pear) GlanceColors.ink else GlanceColors.surface)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.titleLarge, color = GlanceColors.ink)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium)
+        }
     }
 }

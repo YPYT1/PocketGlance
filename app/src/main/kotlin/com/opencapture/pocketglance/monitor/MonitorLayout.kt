@@ -79,4 +79,22 @@ object MonitorLayout {
         val width = max(targetWidth, targetHeight * sourceAspect)
         return width to width / sourceAspect
     }
+
+    fun picturePoint(x: Float, y: Float, width: Float, height: Float, aspect: Float, rotation: Float): Pair<Float, Float>? {
+        val (contentWidth, contentHeight) = contentSizeBeforeRotation(width, height, aspect, rotation != 0f)
+        if (contentWidth <= 0f || contentHeight <= 0f) return null
+        val localX = x - width / 2f
+        val localY = y - height / 2f
+        val sourceX = 0.5f + (if (rotation == 0f) localX else localY) / contentWidth
+        val sourceY = 0.5f + (if (rotation == 0f) localY else -localX) / contentHeight
+        return if (sourceX in 0f..1f && sourceY in 0f..1f) sourceX to sourceY else null
+    }
+
+    fun screenPoint(x: Float, y: Float, width: Float, height: Float, aspect: Float, rotation: Float): Pair<Float, Float> {
+        val (contentWidth, contentHeight) = contentSizeBeforeRotation(width, height, aspect, rotation != 0f)
+        val localX = (x - 0.5f) * contentWidth
+        val localY = (y - 0.5f) * contentHeight
+        return width / 2f + (if (rotation == 0f) localX else -localY) to
+            height / 2f + (if (rotation == 0f) localY else localX)
+    }
 }

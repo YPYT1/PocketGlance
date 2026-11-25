@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -27,7 +30,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.opencapture.pocketglance.gallery.GalleryItem
@@ -42,19 +44,23 @@ fun GalleryScreen(
 ) {
     var preview by remember { mutableStateOf<GalleryItem?>(null) }
 
+    Box(Modifier.fillMaxSize().background(GlanceColors.canvas), contentAlignment = Alignment.TopCenter) {
     Column(
         modifier =
             Modifier
-                .fillMaxSize()
-                .background(GlanceColors.canvas)
-                .padding(16.dp),
+                .widthIn(max = 1120.dp).fillMaxWidth()
+                .statusBarsPadding().navigationBarsPadding()
+                .padding(horizontal = 24.dp, vertical = 16.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("相册", style = MaterialTheme.typography.headlineMedium)
+            Column {
+                Text("相册", style = MaterialTheme.typography.headlineMedium)
+                Text("样片浏览 · 未连接相机存储", style = MaterialTheme.typography.bodyMedium)
+            }
             TextButton(onClick = onBack) { Text("返回监视") }
         }
 
@@ -69,7 +75,7 @@ fun GalleryScreen(
         }
 
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(140.dp),
+            columns = GridCells.Adaptive(152.dp),
             contentPadding = PaddingValues(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -79,6 +85,7 @@ fun GalleryScreen(
                 GalleryTile(item) { preview = item }
             }
         }
+    }
     }
 
     preview?.let { item ->
@@ -136,7 +143,7 @@ private fun GalleryTile(item: GalleryItem, onClick: () -> Unit) {
             Modifier
                 .aspectRatio(1f)
                 .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFFEFE8DC))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
                 .clickable(onClick = onClick),
     ) {
         Text(

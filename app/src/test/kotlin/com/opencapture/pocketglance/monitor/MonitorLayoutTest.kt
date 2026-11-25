@@ -7,6 +7,19 @@ import kotlin.test.assertTrue
 
 class MonitorLayoutTest {
     @Test
+    fun touchesFollowTheRenderedCropAndQuarterTurn() {
+        val (croppedX, croppedY) = requireNotNull(MonitorLayout.picturePoint(0f, 0f, 1200f, 900f, 16f / 9f, 0f))
+        assertEquals(0.125f, croppedX, 0.001f)
+        assertEquals(0f, croppedY, 0.001f)
+        val (rotatedX, rotatedY) = requireNotNull(MonitorLayout.picturePoint(900f, 450f, 1200f, 900f, 9f / 16f, 90f))
+        assertEquals(0.5f, rotatedX, 0.001f)
+        assertTrue(rotatedY < 0.5f)
+        val (screenX, screenY) = MonitorLayout.screenPoint(rotatedX, rotatedY, 1200f, 900f, 9f / 16f, 90f)
+        assertEquals(900f, screenX, 0.001f)
+        assertEquals(450f, screenY, 0.001f)
+    }
+
+    @Test
     fun centerCropPreservesSourceAspectAndCoversBothWindowOrientations() {
         for ((windowWidth, windowHeight) in listOf(2760f to 1256f, 1256f to 2760f)) {
             for (sourceAspect in listOf(16f / 9f, 9f / 16f)) {

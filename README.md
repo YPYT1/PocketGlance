@@ -25,7 +25,7 @@ pocket4p/
 | 需要 | 怎么来 |
 | --- | --- |
 | 应用 UI / 连接壳 | 本仓库 `app/` |
-| DJI SoftAP、解码、权限门 | 兄弟目录 `../OpenCine/Android`（Gradle `includeBuild`） |
+| DJI SoftAP、解码、权限门 | OpenCine 任务工作树（Gradle `includeBuild`） |
 | `libOpenPocketCineAndroid.so` | 已放在 `app/src/main/jniLibs/arm64-v8a/`；重建见 `docs/05-build-and-native.md` |
 
 **没有**整份拷贝 OpenPocketCine 或 OpenCine 源码树。
@@ -38,7 +38,7 @@ cd /Users/liam/project/pocket4p/PocketGlance
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-要求本机已有 `../OpenCine` 检出，且 `local.properties` 指向 Android SDK。
+当前版本需要含拍照状态和解码修复的 `../OpenCine-tasks/pocketglance-photo` 工作树，或通过 `-Popencine.root=/path/to/OpenCine` 指向包含同等改动的检出。`local.properties` 须指向 Android SDK。
 
 ## 图标
 

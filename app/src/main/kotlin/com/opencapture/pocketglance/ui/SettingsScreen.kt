@@ -2,7 +2,8 @@ package com.opencapture.pocketglance.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.opencapture.pocketglance.connection.StartupPreference
@@ -34,11 +37,11 @@ fun SettingsScreen(
     onStartup: (StartupPreference) -> Unit,
     onBack: () -> Unit,
 ) {
+    Box(Modifier.fillMaxSize().background(GlanceColors.canvas), contentAlignment = Alignment.TopCenter) {
     Column(
         modifier =
             Modifier
-                .fillMaxSize()
-                .background(GlanceColors.canvas)
+                .widthIn(max = 760.dp).fillMaxWidth()
                 .statusBarsPadding()
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
@@ -50,7 +53,7 @@ fun SettingsScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("设置", style = MaterialTheme.typography.headlineMedium)
+            Text("连接设置", style = MaterialTheme.typography.headlineMedium)
             TextButton(onClick = onBack) {
                 Text("完成", color = GlanceColors.azure)
             }
@@ -71,7 +74,7 @@ fun SettingsScreen(
                 "下次打开应用时，优先尝试哪一种连接",
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 StartupOption(
                     selected = startup == StartupPreference.Last,
                     title = "上次连接",
@@ -93,6 +96,7 @@ fun SettingsScreen(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -113,7 +117,7 @@ internal fun StartupOption(
                     color = if (selected) GlanceColors.pear else GlanceColors.hairline,
                     shape = RoundedCornerShape(16.dp),
                 )
-                .clickable(onClick = onClick)
+                .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),

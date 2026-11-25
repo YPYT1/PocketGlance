@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,6 +23,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -29,8 +31,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.opencapture.opencine.appkit.DiscoveryPermissions
 import com.opencapture.opencine.appkit.rememberPermissionGate
+import com.opencapture.opencine.media.FeedEffectsRenderPlan
 import com.opencapture.pocketglance.connection.ConnectionMode
 import com.opencapture.pocketglance.connection.ConnectionPhase
+import com.opencapture.pocketglance.connection.FocusGesture
 import com.opencapture.pocketglance.monitor.MonitorLayout
 import com.opencapture.pocketglance.ui.GalleryScreen
 import com.opencapture.pocketglance.ui.GlanceTheme
@@ -38,7 +42,9 @@ import com.opencapture.pocketglance.ui.HomeScreen
 import com.opencapture.pocketglance.ui.LiveFeedHost
 import com.opencapture.pocketglance.ui.LivePerformanceGate
 import com.opencapture.pocketglance.ui.MonitorScreen
+import com.opencapture.pocketglance.ui.PreviewLutDialog
 import com.opencapture.pocketglance.ui.SettingsScreen
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     private val model: GlanceModel by viewModels()
@@ -65,13 +71,17 @@ private object Routes {
 private fun GlanceRoot(model: GlanceModel) {
     val nav = rememberNavController()
     val connection by model.connection.collectAsState()
+    val previewLuts by model.previewLuts.collectAsState()
     val startup by model.startupPreference.collectAsState()
     val filter by model.galleryFilter.collectAsState()
     val items by model.filteredGallery.collectAsState()
     val context = LocalContext.current
     val activity = context as? Activity
+    val tablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
+    var showLutPicker by rememberSaveable { mutableStateOf(false) }
+    val importLuts = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments(), model::importPreviewLuts)
 
     val discovery =
         rememberPermissionGate(
@@ -126,12 +136,14 @@ private fun GlanceRoot(model: GlanceModel) {
         }
     }
 
-    // Live 期间让系统传感器负责横竖切换。Activity 声明了 configChanges，
-    // TextureView 和 Surface 会复用，方向变化只触发布局矩阵更新。
-    LaunchedEffect(connection.phase) {
+    LaunchedEffect(connection.phase, tablet) {
+        activity?.requestedOrientation = when {
+            connection.phase == ConnectionPhase.Live -> MonitorLayout.SENSOR_ORIENTATION
+            tablet -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER
+            else -> MonitorLayout.HOME_ORIENTATION
+        }
         when (connection.phase) {
             ConnectionPhase.Live -> {
-                activity?.requestedOrientation = MonitorLayout.SENSOR_ORIENTATION
                 if (!didAutoOpenMonitor) {
                     didAutoOpenMonitor = true
                     if (route != Routes.Monitor) {
@@ -141,9 +153,6 @@ private fun GlanceRoot(model: GlanceModel) {
             }
             ConnectionPhase.Idle, ConnectionPhase.Failed -> {
                 didAutoOpenMonitor = false
-                if (activity?.requestedOrientation != MonitorLayout.HOME_ORIENTATION) {
-                    activity?.requestedOrientation = MonitorLayout.HOME_ORIENTATION
-                }
             }
             else -> Unit
         }
@@ -163,17 +172,28 @@ private fun GlanceRoot(model: GlanceModel) {
             else -> null
         }
 
-    val feedVisible = route == Routes.Monitor
-    // Attach the decoder surface only after the monitor route is visible. Keeping a
-    // hidden TextureView in the connection screen can consume the first 4K output
-    // before the monitor has a settled layout, which presents as a black monitor.
-    val showFeed = route == Routes.Monitor && connection.phase == ConnectionPhase.Live
+    val showFeed = connection.phase == ConnectionPhase.Live
+    var startingFeed by remember(showFeed) { mutableStateOf(true) }
+    LaunchedEffect(showFeed, connection.pictureReady) {
+        if (showFeed && connection.pictureReady) {
+            delay(3000)
+            startingFeed = false
+        }
+    }
+    var previewAvailable by remember(showFeed) { mutableStateOf(true) }
+    val usePreviewLut = showFeed && previewAvailable && !connection.chrome.isPhoto
+    val activeLut = previewLuts.selected.takeIf { usePreviewLut }
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (showFeed) {
             LiveFeedHost(
-                visible = feedVisible,
                 cameraVertical = connection.cameraVertical,
+                pictureWidth = connection.pictureWidth,
+                pictureHeight = connection.pictureHeight,
+                renderPlan = if (usePreviewLut) previewLuts.plan ?: FeedEffectsRenderPlan.IDENTITY else FeedEffectsRenderPlan.IDENTITY,
+                onPreviewAvailable = { previewAvailable = it },
+                focus = connection.focus.takeIf { route == Routes.Monitor && !showLutPicker && !startingFeed && it.available },
+                onFocus = model::focus,
                 onAttachSurface = model::attachSurface,
                 onFramePresented = model::notePresented,
             )
@@ -201,13 +221,15 @@ private fun GlanceRoot(model: GlanceModel) {
             composable(Routes.Monitor) {
                 MonitorScreen(
                     connection = connection,
+                    startingFeed = startingFeed,
+                    onUnlockFocus = { model.focus(FocusGesture.Unlock, 0f, 0f) },
+                    onStopTracking = { model.focus(FocusGesture.StopTracking, 0f, 0f) },
+                    activeLut = activeLut?.name,
+                    raster = if (connection.pictureReady) "${connection.pictureWidth}×${connection.pictureHeight}" else null,
+                    onOpenLuts = { showLutPicker = true },
                     onGallery = { nav.navigate(Routes.Gallery) },
                     onSettings = { nav.navigate(Routes.Settings) },
                     onRetryRecovery = model::retryRecovery,
-                    onDisconnect = {
-                        model.disconnect()
-                        nav.popBackStack(Routes.Home, inclusive = false)
-                    },
                     onHome = { nav.popBackStack(Routes.Home, inclusive = false) },
                 )
             }
@@ -225,6 +247,11 @@ private fun GlanceRoot(model: GlanceModel) {
                     onStartup = model::setStartupPreference,
                     onBack = { nav.popBackStack() },
                 )
+            }
+        }
+        if (showLutPicker && route == Routes.Monitor && !connection.chrome.isPhoto) {
+            PreviewLutDialog(previewLuts, previewAvailable, { importLuts.launch(arrayOf("*/*")) }, model::selectPreviewLut) {
+                showLutPicker = false
             }
         }
     }
