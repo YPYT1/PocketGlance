@@ -58,7 +58,6 @@ internal data class GalleryState(
     val cameraId: String? = null,
     val deleting: Boolean = false,
     val deletionNote: String? = null,
-    val submittedDeletes: Set<String> = emptySet(),
 )
 
 internal fun galleryTagKey(cameraId: String, itemId: String): String = "$cameraId/$itemId"

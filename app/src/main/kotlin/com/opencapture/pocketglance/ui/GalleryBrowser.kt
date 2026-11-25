@@ -213,7 +213,6 @@ internal fun GalleryScreen(
                     layout = layout,
                     selecting = selecting,
                     selected = item.id in selection,
-                    submitted = item.id in state.submittedDeletes,
                     thumbnailCache = thumbnailCache,
                     onOpen = { if (selecting) toggle(item.id) else previewId = item.id },
                     onSelect = { selecting = true; toggle(item.id) },
@@ -566,7 +565,7 @@ private fun GalleryDateHeading(date: LocalDate?, today: LocalDate) {
 }
 
 private fun canDeleteGalleryItems(items: List<GalleryItem>, state: GalleryState): Boolean =
-    items.isNotEmpty() && items.all { it.canDelete && it.id !in state.submittedDeletes }
+    items.isNotEmpty() && !state.deleting && items.all { it.canDelete }
 
 @Composable
 private fun GalleryTagDialog(existing: List<String>, onClose: () -> Unit, onUpdate: (String, Boolean) -> Unit) {
@@ -607,7 +606,6 @@ private fun GalleryTile(
     layout: GalleryLayout,
     selecting: Boolean,
     selected: Boolean,
-    submitted: Boolean,
     thumbnailCache: GalleryThumbnails,
     onOpen: () -> Unit,
     onSelect: () -> Unit,
@@ -645,11 +643,12 @@ private fun GalleryTile(
                 modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(22.dp),
             )
         }
-        val badge = when {
-            submitted -> "待核对"
-            item.kind == MediaKind.Video -> if (item.file.durationSeconds > 0) MonitorChromeLabels.formatElapsed(item.file.durationSeconds) else "视频"
-            else -> null
-        }
+        val badge =
+            if (item.kind == MediaKind.Video) {
+                if (item.file.durationSeconds > 0) MonitorChromeLabels.formatElapsed(item.file.durationSeconds) else "视频"
+            } else {
+                null
+            }
         badge?.let {
             Text(
                 it,

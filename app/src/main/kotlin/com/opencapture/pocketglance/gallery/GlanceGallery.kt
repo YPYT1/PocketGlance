@@ -95,20 +95,28 @@ internal class GlanceGallery(private val scope: CoroutineScope, private val sour
         if (_state.value.hasMore && !_state.value.loading && !_state.value.deleting) pageRequests?.trySend(Unit)
     }
 
+    /**
+     * 真正删除：向相机发删除命令，短暂等待后从列表乐观移除（与 OpenPocketCine 一致）。
+     * 不再保留「待核对」状态。
+     */
     fun delete(items: List<GalleryItem>) {
         val active = activeBrowse ?: return
         if (_state.value.loading || _state.value.deleting || items.isEmpty()) return
         val requested = items.distinctBy(GalleryItem::id)
         val current = _state.value.items.associateBy(GalleryItem::id)
-        if (requested.any { current[it.id] != it || !it.canDelete || it.id in _state.value.submittedDeletes }) return
+        if (requested.any { current[it.id] != it || !it.canDelete }) return
         _state.value = _state.value.copy(deleting = true, deletionNote = null)
         deleteJob = scope.launch {
-            var sent = 0
+            var removed = 0
+            var failed = 0
             for (item in requested) {
                 if (activeBrowse !== active) break
                 val nativeId = MediaAssetID(item.id)
-                val record = active.service.mediaCatalogRecord(nativeId, active.binding) ?: continue
-                if (record.file != item.file || !record.file.isDeletable) continue
+                val record = active.service.mediaCatalogRecord(nativeId, active.binding)
+                if (record == null || record.file != item.file || !record.file.isDeletable) {
+                    failed++
+                    continue
+                }
                 val submission = try {
                     active.service.submitDeletion(nativeId, active.binding)
                 } catch (error: CancellationException) {
@@ -116,18 +124,26 @@ internal class GlanceGallery(private val scope: CoroutineScope, private val sour
                 } catch (_: Exception) {
                     null
                 }
-                if (submission != null) {
-                    sent++
-                    _state.value = _state.value.copy(submittedDeletes = _state.value.submittedDeletes + item.id)
-                    delay(400)
+                if (submission == null || !active.service.isCurrent(submission)) {
+                    failed++
+                    continue
                 }
+                // 与 Pocket 产品一致：发令后等 400ms，再从本地列表拿掉。
+                delay(400)
+                if (activeBrowse !== active || !active.service.isCurrent(submission)) {
+                    failed++
+                    continue
+                }
+                val nextItems = _state.value.items.filterNot { it.id == item.id }
+                _state.value = _state.value.copy(items = nextItems)
+                removed++
             }
             if (activeBrowse === active) {
-                val skipped = requested.size - sent
                 val note = when {
-                    sent == 0 -> "没有发送删除请求，请刷新相册后再试。"
-                    skipped > 0 -> "已发送 $sent 项删除请求，$skipped 项未发送。请刷新核对相机结果。"
-                    else -> "已发送 $sent 项删除请求，请刷新核对相机结果。"
+                    removed == 0 && failed > 0 -> "删除失败，请稍后重试。"
+                    removed > 0 && failed > 0 -> "已删除 $removed 项，$failed 项失败。"
+                    removed > 0 -> "已删除 $removed 项。"
+                    else -> "没有可删除的项目。"
                 }
                 _state.value = _state.value.copy(deleting = false, deletionNote = note)
             }
