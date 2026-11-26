@@ -20,17 +20,20 @@ class PreviewLutTest {
 
     @Test
     fun categoryLabelDropsCountAndDateBatches() {
-        assertEquals("风景景观专用", lutCategoryLabel("风景景观专用17款"))
-        assertEquals("阿莱色调", lutCategoryLabel("阿莱色调5款"))
-        assertEquals("阿莱色调", lutCategoryLabel("阿莱色调（5款）"))
-        assertEquals("人像合集", lutCategoryLabel("2026人像合集"))
-        assertEquals("胶片合集", lutCategoryLabel("2026胶片"))
-        assertEquals("人像合集", lutCategoryLabel("人像"))
+        assertEquals("风景", lutCategoryLabel("风景景观专用17款"))
+        assertEquals("阿莱", lutCategoryLabel("阿莱色调5款"))
+        assertEquals("阿莱", lutCategoryLabel("阿莱色调（5款）"))
+        assertEquals("阿莱", lutCategoryLabel("14.阿莱色调（5款）"))
+        assertEquals("人像", lutCategoryLabel("2026人像合集"))
+        assertEquals("胶片", lutCategoryLabel("2026胶片"))
+        assertEquals("人像", lutCategoryLabel("人像"))
+        assertEquals("人像", lutCategoryLabel("人像合集"))
+        assertEquals("电影", lutCategoryLabel("电影"))
         assertTrue(isLutDateOrBatchCategory("202602更新"))
         assertTrue(isLutDateOrBatchCategory("26年7月更新"))
         assertTrue(isLutDateOrBatchCategory("8月上新第一弹"))
         assertTrue(isLutDateOrBatchCategory("上新第二弹"))
-        assertFalse(isLutDateOrBatchCategory("风景景观专用"))
+        assertFalse(isLutDateOrBatchCategory("风景"))
         assertFalse(isLutDateOrBatchCategory("人像合集"))
         assertFalse(isLutDateOrBatchCategory("阿莱色调"))
     }

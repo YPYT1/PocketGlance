@@ -15,43 +15,100 @@ internal data class PreviewLut(
     val isBuiltIn: Boolean get() = category != null
 }
 
-/** 筛选芯片顺序（收藏／全部另算）。 */
+/**
+ * 侧栏筛选顺序（收藏／全部另算）。
+ * 前 13 项按产品约定置顶，其余分类排在后面。
+ */
 internal val LutTagFilters: List<String> =
-    listOf("人像", "风景", "天空", "胶片", "夜景", "美食", "艺术", "季节", "Pocket4")
+    listOf(
+        "阿莱",
+        "人像",
+        "风景",
+        "胶片",
+        "电影",
+        "夜景",
+        "季节",
+        "美食",
+        "艺术",
+        "航拍",
+        "富士",
+        "肤色",
+        "Pocket4",
+        // 其余
+        "天空",
+        "日系",
+        "视觉",
+        "官方",
+        "口播",
+        "通用",
+    )
+
+/** 合集／分类在侧栏中的排序权重；未列出的排最后。 */
+internal fun lutFilterSortKey(label: String): Int {
+    val index = LutTagFilters.indexOf(label)
+    return if (index >= 0) index else LutTagFilters.size
+}
 
 private val lutCountSuffix = Regex("[（(]?\\s*\\d+\\s*款\\s*[）)]?")
+private val lutLeadingIndex = Regex("^\\d+[\\.、．\\s]+")
 private val lutDateOrBatchToken =
     Regex(
         "20\\d{2}\\d{2}|20\\d{2}\\s*年|20\\d{2}|\\d{2}\\s*年|\\d{1,2}\\s*月|提前上新|上新|第[一二三四五六七八九十\\d]+弹|更新|LUT",
         RegexOption.IGNORE_CASE,
     )
+/** 旧合集名 / 温影长目录 → ≤4 字分类。 */
 private val lutThemePackNames =
     mapOf(
-        "人像" to "人像合集",
-        "风景" to "风景合集",
-        "天空" to "天空合集",
-        "胶片" to "胶片合集",
-        "夜景" to "夜景合集",
-        "美食" to "美食合集",
-        "艺术" to "艺术合集",
-        "季节" to "季节合集",
+        "人像" to "人像",
+        "人像合集" to "人像",
+        "风景" to "风景",
+        "风景合集" to "风景",
+        "风景景观专用" to "风景",
+        "天空" to "天空",
+        "天空合集" to "天空",
+        "胶片" to "胶片",
+        "胶片合集" to "胶片",
+        "夜景" to "夜景",
+        "夜景合集" to "夜景",
+        "美食" to "美食",
+        "美食合集" to "美食",
+        "艺术" to "艺术",
+        "艺术合集" to "艺术",
+        "季节" to "季节",
+        "季节合集" to "季节",
+        "阿莱" to "阿莱",
+        "阿莱色调" to "阿莱",
+        "电影" to "电影",
+        "日系" to "日系",
+        "富士" to "富士",
+        "航拍" to "航拍",
+        "肤色" to "肤色",
+        "口播" to "口播",
+        "官方" to "官方",
+        "视觉" to "视觉",
+        "通用" to "通用",
+        "Pocket4" to "Pocket4",
     )
 
-/** 分类展示名：去「17款」、备注括号，并剥掉年份／上新批次词，留下主题合集名。 */
+/** 分类展示名：去「17款」、备注括号、年份批次，统一到 ≤4 字主题名。 */
 internal fun lutCategoryLabel(raw: String): String {
     var text = raw.replace(Regex("\\s+"), " ").trim()
     text = text.replace(lutCountSuffix, "")
     text = text.replace(Regex("[（(][^）)]*[）)]"), "")
+    text = text.replace(lutLeadingIndex, "")
     text = text.trim(' ', '-', '_', '·')
     while (true) {
         val next = text.replace(lutDateOrBatchToken, " ").replace(Regex("\\s+"), " ").trim(' ', '-', '_', '·', '/')
         if (next == text) break
         text = next
     }
-    if (text.isEmpty() || text.matches(Regex("\\d+")) || text in setOf("滤镜文件", "导入教程", "滤镜")) {
+    if (text.isEmpty() || text.matches(Regex("\\d+")) || text in setOf("滤镜文件", "导入教程", "滤镜", "还原", "风格")) {
         return ""
     }
-    return lutThemePackNames[text] ?: text
+    lutThemePackNames[text]?.let { return it }
+    val stripped = text.replace(Regex("(合集|专用|色调|系列)$"), "").trim()
+    lutThemePackNames[stripped]?.let { return it }
+    return if (text.length <= 4) text else text.take(4)
 }
 
 /** 剥干净后没有主题名 → 纯日期／上新批次，不当侧栏分类。 */

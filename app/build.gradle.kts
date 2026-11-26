@@ -16,6 +16,7 @@ val suppliedLutRoots: List<java.io.File> =
         ?: listOf(
             file("${System.getProperty("user.home")}/Downloads/Pocket4滤镜LUT"),
             file("${System.getProperty("user.home")}/Downloads/滤镜文件"),
+            file("${System.getProperty("user.home")}/Downloads/2 大疆Dlog-M专用LUT【温影工坊】"),
         )
 abstract class PackPreviewLuts @javax.inject.Inject constructor(
     private val executor: org.gradle.process.ExecOperations,

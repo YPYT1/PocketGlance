@@ -11,9 +11,10 @@ from pathlib import Path
 
 import numpy as np
 
+# 侧栏短标签关键词（分类名同步 ≤4 字）。
 TAG_KEYWORDS: list[tuple[list[str], str]] = [
-    (["人像", "古风", "汉服", "元气", "冷影", "梦境", "画报", "温柔", "柔和", "港风", "日系"], "人像"),
-    (["风景", "森系", "森林", "雪景", "芦苇", "冰岛", "加州", "蓝调", "蓝感", "城市", "漫游"], "风景"),
+    (["人像", "古风", "汉服", "元气", "冷影", "梦境", "画报", "温柔", "柔和", "港风", "potrait", "portrait"], "人像"),
+    (["风景", "森系", "森林", "雪景", "芦苇", "冰岛", "加州", "蓝调", "蓝感", "城市", "漫游", "景观"], "风景"),
     (["天空", "晴空", "晚霞", "落日", "夕阳", "霞"], "天空"),
     (
         [
@@ -29,49 +30,96 @@ TAG_KEYWORDS: list[tuple[list[str], str]] = [
             "复古",
             "宝丽来",
             "拍立得",
-            "电影",
             "昭和",
+            "eterna",
+            "eastman",
+            "bleach",
         ],
         "胶片",
     ),
     (["夜景", "黑金", "夜晚"], "夜景"),
     (["美食", "料理", "烟火", "食光"], "美食"),
     (["油画", "艺术", "朦胧", "莫奈", "宫崎骏", "动漫"], "艺术"),
-    (["四季", "冬日", "夏日", "秋日", "春", "私语"], "季节"),
+    (["四季", "冬日", "夏日", "秋日", "春", "私语", "季节"], "季节"),
+    (["阿莱", "iceblue", "jamaica", "utopia", "tungsten", "neutral", "arri"], "阿莱"),
+    (["电影", "709", "aura", "bliss", "crane", "glow", "pulse", "vivid", "万能", "百搭"], "电影"),
+    (["航拍", "aerial"], "航拍"),
+    (["日系", "小清新"], "日系"),
+    (["肤色", "skin"], "肤色"),
+    (["口播", "网红"], "口播"),
 ]
 
-# 路径片段 → 合集展示名（不要「202602更新」「上新第X弹」）。
+# 路径片段 → ≤4 字分类（更具体的放前面）。
 FOLDER_CATEGORY: list[tuple[str, str]] = [
+    ("阿莱", "阿莱"),
+    ("人像专用", "人像"),
+    ("肤色优化", "肤色"),
+    ("网红口播", "口播"),
+    ("日系小清新", "日系"),
+    ("富士胶片", "富士"),
+    ("航拍专用", "航拍"),
+    ("风景景观", "风景"),
+    ("自然风景", "风景"),
+    ("百搭电影", "电影"),
+    ("专业电影", "电影"),
+    ("胶片电影", "胶片"),
+    ("胶片氛围", "胶片"),
+    ("709电影", "电影"),
+    ("万能电影", "电影"),
+    ("大疆官方", "官方"),
+    ("vision", "视觉"),
+    ("通用色彩", "通用"),
     ("pocket4", "Pocket4"),
-    ("人像", "人像合集"),
-    ("胶片", "胶片合集"),
-    ("夜景", "夜景合集"),
-    ("四季", "风景合集"),
-    ("森系", "风景合集"),
-    ("雪景", "风景合集"),
-    ("阿莱", "阿莱色调"),
-    ("风景景观", "风景景观专用"),
+    ("人像", "人像"),
+    ("胶片", "胶片"),
+    ("夜景", "夜景"),
+    ("美食", "美食"),
+    ("艺术", "艺术"),
+    ("季节", "季节"),
+    ("四季", "季节"),
+    ("森系", "风景"),
+    ("雪景", "风景"),
+    ("风景", "风景"),
 ]
 
-# 标签回退时的合集名（与侧栏短标签区分开）。
+# 短主题 / 旧「合集」名 → 统一 ≤4 字分类。
 THEME_PACK: dict[str, str] = {
-    "人像": "人像合集",
-    "风景": "风景合集",
-    "天空": "天空合集",
-    "胶片": "胶片合集",
-    "夜景": "夜景合集",
-    "美食": "美食合集",
-    "艺术": "艺术合集",
-    "季节": "季节合集",
+    "人像": "人像",
+    "人像合集": "人像",
+    "风景": "风景",
+    "风景合集": "风景",
+    "风景景观专用": "风景",
+    "天空": "天空",
+    "天空合集": "天空",
+    "胶片": "胶片",
+    "胶片合集": "胶片",
+    "夜景": "夜景",
+    "夜景合集": "夜景",
+    "美食": "美食",
+    "美食合集": "美食",
+    "艺术": "艺术",
+    "艺术合集": "艺术",
+    "季节": "季节",
+    "季节合集": "季节",
+    "阿莱": "阿莱",
+    "阿莱色调": "阿莱",
+    "电影": "电影",
+    "日系": "日系",
+    "富士": "富士",
+    "航拍": "航拍",
+    "肤色": "肤色",
+    "口播": "口播",
+    "官方": "官方",
+    "视觉": "视觉",
+    "通用": "通用",
     "Pocket4": "Pocket4",
 }
 
-# 整段都是日期／批次才丢掉；「2026人像合集」要剥年份后留「人像合集」。
 DATE_OR_BATCH_TOKEN = re.compile(
     r"("
-    r"20\d{2}\d{2}"  # 202602
+    r"20\d{2}\d{2}"
     r"|20\d{2}\s*年"
-    r"|20\d{2}"  # 2026 前缀
+    r"|20\d{2}"
     r"|\d{2}\s*年"
     r"|\d{1,2}\s*月"
     r"|提前上新"
@@ -84,6 +132,24 @@ DATE_OR_BATCH_TOKEN = re.compile(
 )
 
 COUNT_SUFFIX = re.compile(r"[（(]?\s*\d+\s*款\s*[）)]?")
+LEADING_INDEX = re.compile(r"^\d+[\.、．\s]+")
+# 只剥「IceBlue - M3P D-LogM」后缀，避免误伤 Dlogm-D-SUNSET 文件名。
+LOG_SUFFIX = re.compile(
+    r"(?:\s*[-–—]\s*|\s+)(?:M3P\s+)?D-?Log-?M\b.*$|\s*for Resolve.*$",
+    re.IGNORECASE,
+)
+DLOGM_PREFIX = re.compile(r"^dlogm-d-", re.IGNORECASE)
+
+# 去重时优先保留这些目录下的副本（分类更准、名字更可读）。
+PREFERRED_PATH_MARKERS = (
+    "阿莱",
+    "官方还原",
+    "肤色优化",
+    "Vision",
+    "富士胶片",
+    "航拍专用",
+    "Pocket4",
+)
 
 
 def clean_category_label(name: str) -> str:
@@ -91,16 +157,23 @@ def clean_category_label(name: str) -> str:
     text = re.sub(r"\s+", " ", name).strip()
     text = COUNT_SUFFIX.sub("", text)
     text = re.sub(r"[（(][^）)]*[）)]", "", text)
+    text = LEADING_INDEX.sub("", text)
     text = text.strip(" -_·")
     return text or name.strip()
 
 
+def normalize_category(label: str) -> str:
+    """统一到 ≤4 字展示名。"""
+    if label in THEME_PACK:
+        return THEME_PACK[label]
+    return label
+
+
 def thematic_category_label(name: str) -> str | None:
-    """从文件夹名提炼主题合集名；纯日期批次返回 None。"""
+    """从文件夹名提炼主题分类；纯日期批次返回 None。"""
     text = clean_category_label(name)
     if not text or re.fullmatch(r"\d+", text):
         return None
-    # 反复剥日期／上新词，留下「人像合集」「阿莱色调」「风景景观专用」等。
     remainder = text
     while True:
         nxt = DATE_OR_BATCH_TOKEN.sub(" ", remainder)
@@ -110,10 +183,18 @@ def thematic_category_label(name: str) -> str | None:
         remainder = nxt
     if not remainder or re.fullmatch(r"\d+", remainder):
         return None
-    if remainder in {"滤镜文件", "导入教程", "滤镜"}:
+    if remainder in {"滤镜文件", "导入教程", "滤镜", "还原", "风格"}:
         return None
-    # 「胶片」「人像」等短主题升成合集名，避免与标签重名。
-    return THEME_PACK.get(remainder, remainder)
+    mapped = THEME_PACK.get(remainder)
+    if mapped:
+        return mapped
+    # 「人像合集」剥「合集」后再映射。
+    stripped = re.sub(r"(合集|专用|色调|系列)$", "", remainder).strip()
+    if stripped in THEME_PACK:
+        return THEME_PACK[stripped]
+    if len(remainder) <= 4:
+        return remainder
+    return remainder[:4]
 
 
 def is_date_or_batch_label(name: str) -> bool:
@@ -171,25 +252,55 @@ def load_cube(path: Path) -> bytes:
 
 def display_name(stem: str, path: Path) -> str:
     name = re.sub(r"\s+", " ", stem).strip()
+    name = LOG_SUFFIX.sub("", name).strip(" -_")
+    name = DLOGM_PREFIX.sub("", name).strip(" -_")
+    portrait = re.fullmatch(r"(?i)pocket\s*3\s*potrait\s*\((\d+)\)", name)
+    if portrait:
+        return f"人像-{portrait.group(1)}"
+    red = re.fullmatch(r"(?i)pocket\s*3\s*red\s*\((\d+)\)", name)
+    if red:
+        return f"红调-{red.group(1)}"
+    # 「大疆官方的还原LUT」→「官方还原」
+    if "官方" in name and "还原" in name:
+        return "官方还原"
     if re.fullmatch(r"\d+", name) or len(name) <= 1:
-        parent = re.sub(r"[（(].*?[）)]", "", path.parent.name).strip()
-        if parent and parent not in {"滤镜文件", "导入教程"}:
-            return f"{parent}-{name}"
+        parent = clean_category_label(path.parent.name)
+        if parent and parent not in {"滤镜文件", "导入教程", "还原", "风格"}:
+            return f"{parent}-{name}" if name else parent
     return name or stem
 
 
-def infer_tags(path: Path, name: str) -> list[str]:
-    hay = f"{'/'.join(path.parts)}/{name}".lower()
+def infer_tags(path: Path, name: str, category: str) -> list[str]:
+    hay = f"{'/'.join(path.parts)}/{name}/{category}".lower()
     tags: list[str] = []
     for keys, tag in TAG_KEYWORDS:
         if any(key.lower() in hay for key in keys):
             tags.append(tag)
+    if category and category not in {"其他", "通用", "官方", "视觉"} and category not in tags:
+        # 分类本身也当作可筛选标签（阿莱／航拍／富士等）。
+        if category in {t for _, t in TAG_KEYWORDS} or category in {
+            "阿莱",
+            "电影",
+            "航拍",
+            "富士",
+            "日系",
+            "肤色",
+            "口播",
+            "Pocket4",
+        }:
+            tags.append(category)
     if "pocket4" in hay or "pocket 4" in hay:
         if "Pocket4" not in tags:
             tags.append("Pocket4")
-    # Stable unique order as declared in TAG_KEYWORDS then Pocket4.
-    order = [t for _, t in TAG_KEYWORDS] + ["Pocket4"]
-    return [t for t in order if t in tags]
+    order = [t for _, t in TAG_KEYWORDS] + ["富士", "官方", "视觉", "通用", "Pocket4"]
+    # 去重保序
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for tag in order + tags:
+        if tag in tags and tag not in seen:
+            seen.add(tag)
+            ordered.append(tag)
+    return ordered
 
 
 def theme_from_tags(tags: list[str]) -> str:
@@ -208,23 +319,20 @@ def infer_category(path: Path, roots: list[Path], tags: list[str]) -> str:
     joined = "/".join(parts).lower()
     root_name = _matching_root(path, roots).name.lower()
 
-    # 先从每一级目录名提炼主题（「2026人像合集」→「人像合集」）。
+    # 先扫相对路径关键词（温影编号目录等）；不要用根目录名误伤全部 Pocket4。
+    for needle, label in FOLDER_CATEGORY:
+        if needle.lower() == "pocket4":
+            continue
+        if needle.lower() in joined:
+            return label
+
     for part in parts:
         thematic = thematic_category_label(part)
         if thematic:
             return thematic
 
-    if "pocket4" in root_name:
-        for needle, label in FOLDER_CATEGORY:
-            if needle == "pocket4":
-                continue
-            if needle.lower() in joined:
-                return label
+    if "pocket4" in root_name or "pocket4" in joined:
         return "Pocket4"
-
-    for needle, label in FOLDER_CATEGORY:
-        if needle.lower() in joined or needle.lower() in root_name:
-            return label
 
     return theme_from_tags(tags)
 
@@ -254,10 +362,20 @@ def collect_unique(roots: list[Path]) -> list[tuple[Path, str]]:
             if previous is None:
                 chosen[digest] = path
                 continue
-            # Prefer longer descriptive names and deeper Pocket4 paths.
-            score = (len(path.stem), "pocket4" in str(path).lower(), len(str(path)))
-            prev = (len(previous.stem), "pocket4" in str(previous).lower(), len(str(previous)))
-            if score > prev:
+            text = str(path)
+            prev_text = str(previous)
+
+            def path_score(p: Path, text: str) -> tuple:
+                prefer = sum(1 for marker in PREFERRED_PATH_MARKERS if marker.lower() in text.lower())
+                return (
+                    prefer,
+                    len(p.stem),
+                    "温影" in text,
+                    "pocket4" in text.lower(),
+                    len(text),
+                )
+
+            if path_score(path, text) > path_score(previous, prev_text):
                 chosen[digest] = path
     return [(path, digest) for digest, path in sorted(chosen.items(), key=lambda item: item[1].as_posix())]
 
@@ -279,10 +397,19 @@ def main() -> None:
     unique = collect_unique(roots)
     for index, (path, _digest) in enumerate(unique, 1):
         name = display_name(path.stem, path)
-        tags = infer_tags(path, name)
-        category = infer_category(path, roots, tags)
+        # 先分类再补标签，保证阿莱等目录名进入 tags。
+        category = infer_category(path, roots, [])
+        tags = infer_tags(path, name, category)
+        if category in {"其他", "Pocket4"}:
+            themed = theme_from_tags(tags)
+            if themed != "其他":
+                category = themed
+                if "Pocket4" in tags or "pocket4" in str(path).lower():
+                    if "Pocket4" not in tags:
+                        tags.append("Pocket4")
+        category = normalize_category(category)
         thematic = thematic_category_label(category)
-        category = thematic or theme_from_tags(tags)
+        category = normalize_category(thematic or category)
         filename = f"look-{index:03d}.rgba"
         try:
             packed = load_cube(path)
