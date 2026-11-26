@@ -64,11 +64,20 @@ fun MonitorScreen(
     val portrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     val phone = configuration.smallestScreenWidthDp < 600
 
+    // 机身录制规格（4K 等）≠ SoftAP 直播分辨率；旁注实际出图尺寸，避免误以为监视是 4K。
+    val liveResChip =
+        remember(connection.pictureReady, connection.sourceWidth, connection.sourceHeight) {
+            if (!connection.pictureReady) return@remember null
+            val w = connection.sourceWidth
+            val h = connection.sourceHeight
+            if (w <= 0 || h <= 0) null else "直播 ${w}×${h}"
+        }
     val primaryChips =
-        remember(chrome.shootingModeLabel, chrome.formatChip, chrome.colorChip, chrome.isPhoto) {
+        remember(chrome.shootingModeLabel, chrome.formatChip, chrome.colorChip, chrome.isPhoto, liveResChip) {
             listOfNotNull(
                 chrome.shootingModeLabel.takeUnless { it.isBlank() || it == "—" },
                 chrome.formatChip.takeIf { (chrome.isPhoto || it != "—") && it.isNotBlank() },
+                liveResChip,
                 chrome.colorChip.takeUnless { it.isBlank() || it == "—" },
             )
         }

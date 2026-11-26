@@ -350,6 +350,15 @@ class WirelessSoftApTransport(
                                 "rawMode=0x%02X".format(chrome.shootingMode and 0xFF),
                         )
                     }
+                    if (next.pictureReady &&
+                        (prev.sourceWidth != next.sourceWidth || prev.sourceHeight != next.sourceHeight)
+                    ) {
+                        GlanceLog.i(
+                            "live",
+                            "stream ${next.sourceWidth}x${next.sourceHeight} " +
+                                "(record chip=${next.chrome.formatChip})",
+                        )
+                    }
                     _state.value = next
                     if (recovery is SessionRecoveryUi.WaitingForOperator || recovery is SessionRecoveryUi.PausedAfterDrops) {
                         scheduleRecoveryRetry(created)
