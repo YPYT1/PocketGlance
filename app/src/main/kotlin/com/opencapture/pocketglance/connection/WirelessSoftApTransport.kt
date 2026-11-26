@@ -350,8 +350,9 @@ class WirelessSoftApTransport(
                                 "rawMode=0x%02X".format(chrome.shootingMode and 0xFF),
                         )
                     }
+                    val prevLive = _state.value
                     if (next.pictureReady &&
-                        (prev.sourceWidth != next.sourceWidth || prev.sourceHeight != next.sourceHeight)
+                        (prevLive.sourceWidth != next.sourceWidth || prevLive.sourceHeight != next.sourceHeight)
                     ) {
                         GlanceLog.i(
                             "live",
