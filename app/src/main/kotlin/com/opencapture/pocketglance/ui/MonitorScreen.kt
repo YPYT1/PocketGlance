@@ -265,26 +265,30 @@ fun MonitorScreen(
                 Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(horizontal = 8.dp, vertical = 14.dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(Color.Black.copy(alpha = 0.7f))
-                    .padding(horizontal = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    // 贴近底边，只留一点空隙（系统导航条之上）。
+                    .padding(start = 4.dp, end = 4.dp, top = 0.dp, bottom = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(0.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = onHome) {
-                Text("首页", color = Color.White.copy(alpha = 0.9f))
-            }
+            // 底栏无底板：只留文字，避免黑块／玻璃条抢画面。
+            val label = Color.White.copy(alpha = 0.92f)
+            val tight = PaddingValues(horizontal = 12.dp, vertical = 2.dp)
+            TextButton(onClick = onHome, contentPadding = tight) { Text("首页", color = label) }
             if (chrome.supportsPreviewLut && connection.phase == ConnectionPhase.Live) {
-                TextButton(onClick = onOpenLuts) {
-                    Text(activeLut ?: "LUT", color = GlanceColors.pear, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.widthIn(max = 92.dp))
+                TextButton(onClick = onOpenLuts, contentPadding = tight) {
+                    Text(
+                        activeLut ?: "LUT",
+                        color = label,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 92.dp),
+                    )
                 }
             }
-            TextButton(onClick = onSettings) { Text("设置", color = Color.White.copy(alpha = 0.9f)) }
+            TextButton(onClick = onSettings, contentPadding = tight) { Text("设置", color = label) }
             if (connection.mode == ConnectionMode.Wireless) {
-                TextButton(onClick = onGallery, enabled = !chrome.isRecording) {
-                    Text("相册", color = GlanceColors.pear)
+                TextButton(onClick = onGallery, enabled = !chrome.isRecording, contentPadding = tight) {
+                    Text("相册", color = if (chrome.isRecording) label.copy(alpha = 0.4f) else label)
                 }
             }
         }
