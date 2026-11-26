@@ -61,7 +61,6 @@ class WirelessSoftApTransport(
     @Volatile private var pendingSurface: Surface? = null
     private var autoConnectAttempted = false
     private var reportedLiveCamera: String? = null
-    private var lastDisconnectAtMs = 0L
     private var warmRetryAttempt = 0
     private var warmRetryJob: Job? = null
     private var recoveryRetryJob: Job? = null
@@ -143,7 +142,7 @@ class WirelessSoftApTransport(
         focusJob?.join()
         session?.let { releaseFocusLock(it, _focus.value.lock) }
         disconnectSession()
-        lastDisconnectAtMs = SystemClock.elapsedRealtime()
+        noteDisconnect()
         warmRetryAttempt = 0
         _state.value = ConnectionState(mode = mode, phase = ConnectionPhase.Idle)
     }
@@ -154,7 +153,11 @@ class WirelessSoftApTransport(
             if (surface == null) current.detachMonitorSurface()
             else {
                 current.attachSurface(surface)
-                if (monitorForeground) current.restoreMonitorPictureIfNeeded()
+                if (monitorForeground) {
+                    current.restoreMonitorPictureIfNeeded()
+                    // Surface 一挂上立刻要 live，不等 MainActivity 700ms 轮询。
+                    current.resumeLiveForMonitor("surface attached")
+                }
             }
         }
     }
@@ -182,6 +185,24 @@ class WirelessSoftApTransport(
     fun recoverStaleMonitorFeed() {
         if (!monitorForeground || _state.value.pocketState != PocketState.Monitoring) return
         session?.recoverStaleMonitorFeed()
+    }
+
+    /**
+     * Debug only：本地丢掉视频 UDP，ACK 照常发 —— 复现「视频死、控制面活」卡顿。
+     * 返回是否成功挂上注入门。
+     */
+    fun debugDropVideoPackets(durationMs: Long): Boolean {
+        val current = session ?: return false
+        if (_state.value.phase != ConnectionPhase.Live) return false
+        val until = SystemClock.elapsedRealtime() + durationMs.coerceIn(1_000L, 30_000L)
+        Log.i(TAG, "debug: drop video packets for ${until - SystemClock.elapsedRealtime()}ms (ACK continues)")
+        // false → 丢包；窗口结束后放行并清掉门。
+        current.debugVideoPacketAdmission = {
+            val open = SystemClock.elapsedRealtime() >= until
+            if (open) current.debugVideoPacketAdmission = null
+            open
+        }
+        return true
     }
 
     override fun notePresented(sourceTimestampNs: Long) {
@@ -275,10 +296,11 @@ class WirelessSoftApTransport(
     }
 
     private suspend fun awaitDisconnectQuietPeriod() {
-        val elapsed = SystemClock.elapsedRealtime() - lastDisconnectAtMs
+        val since = lastDisconnectAtMs
+        val elapsed = SystemClock.elapsedRealtime() - since
         val remaining = DISCONNECT_QUIET_MS - elapsed
-        if (lastDisconnectAtMs > 0L && remaining > 0L) {
-            Log.d(TAG, "quiet ${remaining}ms after disconnect before rescan")
+        if (since > 0L && remaining > 0L) {
+            Log.i(TAG, "quiet ${remaining}ms after disconnect before rescan")
             _state.value =
                 ConnectionState(
                     mode = mode,
@@ -392,6 +414,8 @@ class WirelessSoftApTransport(
                         created.connect(found.first())
                     }
                     if (phase == DjiPhase.FAILED) {
+                        // GATT 撞窗失败后立刻扫会再撞；记下时刻，暖重连前强制再等静默期。
+                        noteDisconnect()
                         (cameraTarget ?: warmId)?.let(::scheduleWarmRetry)
                     }
                 }
@@ -407,18 +431,33 @@ class WirelessSoftApTransport(
 
     private fun scheduleWarmRetry(warmId: String) {
         if (warmRetryJob?.isActive == true) return
-        warmRetryAttempt = (warmRetryAttempt + 1).coerceAtMost(6)
-        val waitMs = (WARM_RETRY_BASE_MS shl (warmRetryAttempt - 1)).coerceAtMost(30_000)
-        Log.i(TAG, "warm reconnect retry $warmRetryAttempt in ${waitMs}ms")
+        // 最多 3 次，避免失败后叠太勤拖慢「给人点重试」的时机。
+        if (warmRetryAttempt >= 3) {
+            Log.i(TAG, "warm reconnect exhausted after $warmRetryAttempt tries — wait for operator")
+            return
+        }
+        warmRetryAttempt += 1
+        val backoffMs = (WARM_RETRY_BASE_MS shl (warmRetryAttempt - 1)).coerceAtMost(12_000)
+        val quietLeft =
+            if (lastDisconnectAtMs > 0L) {
+                (DISCONNECT_QUIET_MS - (SystemClock.elapsedRealtime() - lastDisconnectAtMs))
+                    .coerceAtLeast(0L)
+            } else {
+                0L
+            }
+        // 退避与断开静默取较大值，避免 GATT 失败后 0.5s 内再撞窗。
+        val waitMs = maxOf(backoffMs, quietLeft)
+        Log.i(TAG, "warm reconnect retry $warmRetryAttempt in ${waitMs}ms (quietLeft=${quietLeft}ms)")
         warmRetryJob =
             scope.launch {
                 _state.value =
                     _state.value.copy(
                         phase = ConnectionPhase.Connecting,
-                        message = "连接未完成，${waitMs / 1000} 秒后自动重试…",
+                        message = "连接未完成，${(waitMs + 999) / 1000} 秒后自动重试…",
                         pocketState = PocketState.Discovering,
                     )
                 delay(waitMs)
+                awaitDisconnectQuietPeriod()
                 warmRetryJob = null
                 beginSession(warmId, resetWarmRetries = false)
             }
@@ -530,8 +569,19 @@ class WirelessSoftApTransport(
 
     companion object {
         private const val TAG = "PocketGlance"
-        private const val DISCONNECT_QUIET_MS = 900L
-        private const val WARM_RETRY_BASE_MS = 1200L
+        /** 断开/GATT 失败后静默，避免立刻重连撞 BLE 释放窗。 */
+        private const val DISCONNECT_QUIET_MS = 2_000L
+        private const val WARM_RETRY_BASE_MS = 2_000L
+
+        /**
+         * GlanceModel 每次点「无线」都会 new 一个 Transport；静默期必须跨实例，
+         * 否则断开后立刻重连会跳过等待、白撞一次 GATT（实机约浪费 4–5s）。
+         */
+        @Volatile private var lastDisconnectAtMs = 0L
+
+        private fun noteDisconnect() {
+            lastDisconnectAtMs = SystemClock.elapsedRealtime()
+        }
     }
 }
 

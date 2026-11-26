@@ -224,7 +224,8 @@ internal class GlanceGallery(private val scope: CoroutineScope, private val sour
         deleteJob?.cancel()
         listJob?.cancel()
         sessionJob?.cancel()
-        _state.value = GalleryState()
+        // 保持 loading，避免离开瞬间闪「没有符合条件的媒体」。
+        _state.value = GalleryState(loading = true)
     }
 
     /** 取消会话并等到 browse.close → returnToLive / exitPlayback 跑完。 */

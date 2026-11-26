@@ -90,14 +90,19 @@ fun MonitorScreen(
     val splitChrome = portrait
     // 首帧／稳定窗口必须盖住整屏（含挖孔区）。遮罩若放在 displayCutoutPadding 内，
     // 横屏左侧刘海空白会露出底下 LiveFeedHost 的窄条画面。
+    // 仅半透明提示，勿用不透明全屏盖住底层 TextureView（部分机型会因此永不出 Surface）。
     val coverFeed =
         connection.phase == ConnectionPhase.Live &&
             (startingFeed || !connection.pictureReady)
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 先画全屏遮罩（含挖孔），再叠 HUD，避免盖住顶栏／底栏。
         if (coverFeed) {
-            Box(Modifier.fillMaxSize().background(GlanceColors.ink), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(GlanceColors.ink.copy(alpha = if (connection.pictureReady) 0.55f else 0.72f)),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text(
                     if (connection.pictureReady) "正在稳定直播画面…" else "正在等待首帧…",
                     color = inkSoft,

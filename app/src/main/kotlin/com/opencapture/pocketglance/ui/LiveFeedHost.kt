@@ -73,9 +73,10 @@ fun LiveFeedHost(
             context, scopeBus, preview, NativeGlBackend::create,
             onDecoderSurface = {
                 attachState.value(it)
-                Log.d("GlanceFeed", "GPU decoder surface attached")
+                Log.i("GlanceFeed", "GPU decoder surface attached")
             },
             onGpuFailed = {
+                Log.w("GlanceFeed", "GPU failed — falling back to direct TextureView surface")
                 attachState.value(null)
                 directOutput = true
                 availabilityState.value(false)
@@ -84,6 +85,7 @@ fun LiveFeedHost(
             notifySurfaceOnMain = true,
             onFirstFrame = {
                 waitingForPicture = false
+                lastPreview?.recycle()
                 lastPreview = null
             },
             onFramePresented = { timestamp -> timestamp?.let { presentedState.value(it) } },
@@ -104,10 +106,15 @@ fun LiveFeedHost(
 
     fun keepLastPicture(view: TextureView) {
         if (waitingForPicture || view.width <= 0 || view.height <= 0) return
-        val scale = minOf(1f, 960f / maxOf(view.width, view.height))
-        lastPreview = runCatching {
-            view.getBitmap((view.width * scale).toInt().coerceAtLeast(1), (view.height * scale).toInt().coerceAtLeast(1))
-        }.getOrNull()
+        // 冻结帧只做占位；缩到约 480 边可少一次大 Bitmap 分配，减轻转屏/卸 Surface 时的 GC。
+        val scale = minOf(1f, 480f / maxOf(view.width, view.height))
+        val snapped =
+            runCatching {
+                view.getBitmap((view.width * scale).toInt().coerceAtLeast(1), (view.height * scale).toInt().coerceAtLeast(1))
+            }.getOrNull()
+        val previous = lastPreview
+        lastPreview = snapped
+        if (previous != null && previous !== snapped) previous.recycle()
     }
 
     fun detachSurface() {
@@ -120,6 +127,8 @@ fun LiveFeedHost(
     DisposableEffect(Unit) {
         onDispose {
             detachSurface()
+            lastPreview?.recycle()
+            lastPreview = null
             renderer.close()
             preview.close()
         }
@@ -142,6 +151,10 @@ fun LiveFeedHost(
                                 width: Int,
                                 height: Int,
                             ) {
+                                Log.i(
+                                    "GlanceFeed",
+                                    "TextureView surface available ${width}x${height} direct=$directOutput",
+                                )
                                 waitingForPicture = true
                                 if (directOutput) {
                                     heldSurface[0] = Surface(texture)
@@ -174,6 +187,7 @@ fun LiveFeedHost(
                             override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {
                                 if (directOutput) {
                                     waitingForPicture = false
+                                    lastPreview?.recycle()
                                     lastPreview = null
                                     presentedState.value(texture.timestamp)
                                 }

@@ -23,14 +23,23 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.opencapture.pocketglance.BuildConfig
 import com.opencapture.pocketglance.connection.StartupPreference
 import com.opencapture.pocketglance.monitor.MonitorOrientation
+import com.opencapture.pocketglance.update.AppUpdate
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
@@ -66,6 +75,7 @@ fun SettingsScreen(
                 monitorOrientation = monitorOrientation,
                 onMonitorOrientation = onMonitorOrientation,
                 showDiagnostics = true,
+                showAbout = true,
                 onViewLogs = onViewLogs,
                 onClearLogs = onClearLogs,
                 onExportLogs = onExportLogs,
@@ -88,6 +98,7 @@ fun SettingsContent(
     monitorOrientation: MonitorOrientation,
     onMonitorOrientation: (MonitorOrientation) -> Unit,
     showDiagnostics: Boolean = false,
+    showAbout: Boolean = false,
     onViewLogs: () -> Unit = {},
     onClearLogs: () -> Unit = {},
     onExportLogs: () -> Unit = {},
@@ -181,6 +192,75 @@ fun SettingsContent(
                     Text(computerHint, style = MaterialTheme.typography.bodyMedium)
                 }
             }
+        }
+
+        if (showAbout) {
+            AboutAndUpdateSection()
+        }
+    }
+}
+
+@Composable
+private fun AboutAndUpdateSection() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var note by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(GlanceColors.surface)
+                .border(1.dp, GlanceColors.hairline, RoundedCornerShape(20.dp))
+                .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("关于", style = MaterialTheme.typography.titleLarge)
+        Text(AppUpdate.displayVersion(), style = MaterialTheme.typography.bodyLarge)
+        Text(
+            "包名 ${BuildConfig.APPLICATION_ID}\n发布后可从 GitHub Release 在线检查并安装更新。",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        LogActionRow(
+            title = if (busy) "正在检查…" else "检查更新",
+            detail = "读取 GitHub 最新 Release，有新版本则下载安装",
+            onClick = {
+                if (busy) return@LogActionRow
+                busy = true
+                note = null
+                scope.launch {
+                    when (val result = AppUpdate.check()) {
+                        is AppUpdate.CheckResult.UpToDate -> {
+                            note = "已是最新：${result.current}"
+                            busy = false
+                        }
+                        is AppUpdate.CheckResult.Failed -> {
+                            note = result.message
+                            busy = false
+                        }
+                        is AppUpdate.CheckResult.Available -> {
+                            note = "发现 ${result.release.tag}，正在下载…"
+                            runCatching {
+                                if (!AppUpdate.canRequestInstall(context)) {
+                                    note = "请先允许「安装未知应用」，然后再点检查更新"
+                                    AppUpdate.openUnknownSourcesSettings(context)
+                                    return@launch
+                                }
+                                val apk = AppUpdate.downloadApk(context, result.release)
+                                note = "已下载 ${result.release.tag}，正在打开安装…"
+                                AppUpdate.installApk(context, apk)
+                            }.onFailure {
+                                note = it.message ?: "下载或安装失败"
+                            }
+                            busy = false
+                        }
+                    }
+                }
+            },
+        )
+        if (!note.isNullOrBlank()) {
+            Text(note!!, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

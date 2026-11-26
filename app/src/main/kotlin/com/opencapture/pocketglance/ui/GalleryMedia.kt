@@ -199,8 +199,8 @@ internal fun CameraVideo(
 
 internal data class GalleryImage(val bitmap: ImageBitmap? = null, val finished: Boolean = false)
 
-private val galleryImageSlots = Semaphore(4)
-private const val THUMBNAIL_CACHE_BYTES = 24 * 1024 * 1024
+private val galleryImageSlots = Semaphore(3)
+private const val THUMBNAIL_CACHE_BYTES = 12 * 1024 * 1024
 internal class GalleryThumbnails {
     val cache = object : LruCache<String, ImageBitmap>(THUMBNAIL_CACHE_BYTES) {
         override fun sizeOf(key: String, value: ImageBitmap) = value.width * value.height * 4
@@ -241,7 +241,7 @@ internal fun rememberGalleryImage(item: GalleryItem, thumbnail: Boolean, thumbna
                         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
                         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) continue
-                        val maxEdge = if (thumbnail) 420 else 1800
+                        val maxEdge = if (thumbnail) 320 else 1440
                         var sample = 1
                         while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxEdge) sample *= 2
                         val options = BitmapFactory.Options().apply { inSampleSize = sample }

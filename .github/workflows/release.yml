@@ -1,0 +1,24 @@
+# Tag 推送后给出发布提示。
+# 完整流程（构建 APK + Release + 手机可「检查更新」）请在本机执行：
+#   ./scripts/publish-release.sh
+#
+# 原因：assemble 依赖 includeBuild 的 OpenCine 工作树；把 OpenCine 推进 CI
+# 需要单独配置可拉取的仓库 Secret。日常用本地脚本最稳。
+name: Release
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+jobs:
+  hint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: How to publish APK
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "::notice::Tag $TAG 已推送。"
+          echo "若尚未上传 APK，在开发机执行: ./scripts/publish-release.sh"
+          echo "手机端：设置 → 关于 → 检查更新"

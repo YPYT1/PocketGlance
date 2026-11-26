@@ -4,10 +4,15 @@ import android.Manifest
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -94,9 +99,29 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private var debugDropReceiver: BroadcastReceiver? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (BuildConfig.DEBUG) {
+            val receiver =
+                object : BroadcastReceiver() {
+                    override fun onReceive(context: Context?, intent: Intent?) {
+                        val ms = intent?.getLongExtra("duration_ms", 8_000L) ?: 8_000L
+                        val ok = model.debugDropVideoPackets(ms)
+                        Log.i("PocketGlance", "debug DROP_VIDEO durationMs=$ms armed=$ok")
+                    }
+                }
+            debugDropReceiver = receiver
+            val filter = IntentFilter(DEBUG_DROP_VIDEO_ACTION)
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                registerReceiver(receiver, filter)
+            }
+        }
         setContent {
             GlanceTheme {
                 GlanceRoot(
@@ -122,6 +147,16 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         model.setMonitorForeground(false)
         super.onStop()
+    }
+
+    override fun onDestroy() {
+        debugDropReceiver?.let { runCatching { unregisterReceiver(it) } }
+        debugDropReceiver = null
+        super.onDestroy()
+    }
+
+    companion object {
+        const val DEBUG_DROP_VIDEO_ACTION = "com.opencapture.pocketglance.DEBUG_DROP_VIDEO"
     }
 }
 
@@ -277,33 +312,52 @@ private fun GlanceRoot(
     fun returnToMonitor() {
         showLutPicker = false
         if (nav.currentDestination?.route == Routes.Monitor) return
-        if (nav.popBackStack(Routes.Monitor, inclusive = false)) return
+        // 日志：popBackStack(monitor) 常报 not found（栈上只剩 home/gallery）。
+        // 不要依赖 pop；直接 navigate + popUpTo Home，singleTop 复用已有监视页。
         nav.navigate(Routes.Monitor) {
-            popUpTo(Routes.Home)
+            popUpTo(Routes.Home) { inclusive = false }
             launchSingleTop = true
         }
     }
     fun leaveGalleryToMonitor() {
         if (leavingGallery) return
         leavingGallery = true
+        // 先离开相册 UI，再后台 exitPlayback。否则会先清列表（「没有符合条件的媒体」）
+        // 且相机已退出回放，人却还停在相册上干等 closeAndWait。
+        returnToMonitor()
         model.leaveGallery {
-            // Keep leavingGallery true through pop so Gallery onDispose does not
-            // race a second gallery.close() before browse return finishes.
-            returnToMonitor()
             leavingGallery = false
         }
     }
 
-    LaunchedEffect(sessionLive, foreground, openRequest) {
-        if (foreground && sessionLive && nav.currentDestination?.route != Routes.Monitor) {
-            if (nav.currentDestination?.route == Routes.Gallery) leaveGalleryToMonitor()
-            else returnToMonitor()
-        }
+    // 刚连上 Live 时从首页进监视一次。不要监听 route：否则相册/设置/首页会被拽回，
+    // 误走 leaveGallery 还会让相机收起再展开。
+    LaunchedEffect(sessionLive) {
+        if (!sessionLive) return@LaunchedEffect
+        if (nav.currentDestination?.route == Routes.Home) returnToMonitor()
     }
-    LaunchedEffect(sessionLive, route, foreground) {
-        if (!sessionLive || route != Routes.Monitor || !foreground) return@LaunchedEffect
+    // 从后台回到前台：只从首页拉回监视，绝不打断相册/设置。
+    LaunchedEffect(openRequest, foreground) {
+        if (!foreground || !sessionLive) return@LaunchedEffect
+        if (openRequest == 0) return@LaunchedEffect
+        if (nav.currentDestination?.route == Routes.Home) returnToMonitor()
+    }
+    // 监视或设置（feed 保活）时周期探测；首页/相册不跑。
+    val feedKeptAlive = route == Routes.Monitor || route == Routes.Settings
+    LaunchedEffect(sessionLive, feedKeptAlive, foreground) {
+        if (!sessionLive || !feedKeptAlive || !foreground) return@LaunchedEffect
         while (isActive) {
             delay(2_000)
+            model.recoverStaleMonitorFeed()
+        }
+    }
+    // 首帧：立刻 nudge 一次，再短周期补刀（Surface attach 路径也会 nudge）。
+    LaunchedEffect(sessionLive, feedKeptAlive, foreground, connection.pictureReady) {
+        if (!sessionLive || !feedKeptAlive || !foreground || connection.pictureReady) return@LaunchedEffect
+        model.recoverStaleMonitorFeed()
+        repeat(8) {
+            delay(500)
+            if (connection.pictureReady) return@LaunchedEffect
             model.recoverStaleMonitorFeed()
         }
     }
@@ -336,8 +390,12 @@ private fun GlanceRoot(
     val wiredUvc = connection.mode == ConnectionMode.Wired && connection.phase == ConnectionPhase.Live
     var startingFeed by remember(showFeed) { mutableStateOf(true) }
     LaunchedEffect(showFeed, connection.pictureReady) {
-        if (showFeed && connection.pictureReady) {
-            delay(3000)
+        if (!showFeed) {
+            startingFeed = true
+            return@LaunchedEffect
+        }
+        if (connection.pictureReady) {
+            delay(400)
             startingFeed = false
         }
     }
@@ -350,16 +408,19 @@ private fun GlanceRoot(
     val usePreviewLut = canOpenLut && previewAvailable
     val activeLut = previewLuts.selected.takeIf { usePreviewLut }
 
+    // 监视+设置保活 TextureView（不拆解码器）；首页/相册卸掉，避免不透明层压死 Surface。
+    val keepLiveHost = showFeed && route != Routes.Home && route != Routes.Gallery
+
     Box(modifier = Modifier.fillMaxSize().fullScreenPortraitFallback(if (usePortraitFallback) display.portraitFallbackDegrees else 0f)) {
         when {
-            wiredUvc -> UvcFeedHost(
+            wiredUvc && keepLiveHost -> UvcFeedHost(
                 pictureWidth = connection.pictureWidth,
                 pictureHeight = connection.pictureHeight,
                 foreground = foreground,
                 onAttachSurface = model::attachSurface,
                 onFramePresented = model::notePresented,
             )
-            showFeed -> LiveFeedHost(
+            keepLiveHost -> LiveFeedHost(
                 rotation = pictureRotation,
                 blackSides = picturePortrait,
                 foreground = foreground,
@@ -369,13 +430,14 @@ private fun GlanceRoot(
                 sourceHeight = connection.sourceHeight,
                 renderPlan = if (usePreviewLut) previewLuts.plan ?: FeedEffectsRenderPlan.IDENTITY else FeedEffectsRenderPlan.IDENTITY,
                 onPreviewAvailable = { previewAvailable = it },
-                focus = connection.focus.takeIf { route == Routes.Monitor && !lutPickerVisible && !startingFeed && it.available },
+                focus = connection.focus.takeIf {
+                    route == Routes.Monitor && !lutPickerVisible && !startingFeed && it.available
+                },
                 onFocus = model::focus,
                 onAttachSurface = model::attachSurface,
                 onFramePresented = model::notePresented,
             )
         }
-
         NavHost(navController = nav, startDestination = Routes.Home) {
             composable(Routes.Home) {
                 BackHandler(enabled = sessionLive && route == Routes.Home) { returnToMonitor() }

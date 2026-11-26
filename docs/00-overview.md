@@ -12,7 +12,7 @@ PocketGlance（应用显示名：**Pocket 监视器**）是一个精简的 Andro
 
 包名 / applicationId：`com.opencapture.pocketglance`  
 Debug 后缀：`.debug` → `com.opencapture.pocketglance.debug`  
-当前版本属性：`pocketglance.versionName=1.2.0`，`versionCode=5`（见根 `gradle.properties`）
+当前版本属性：`pocketglance.versionName=1.2.1`，`versionCode=6`（见根 `gradle.properties`；设置页「关于」可查看，并可检查 GitHub Release 更新）
 
 ## 设计意图
 

@@ -154,9 +154,10 @@ fun HomeScreen(
                         monitorOrientation = monitorOrientation,
                         onMonitorOrientation = onMonitorOrientation,
                         showDiagnostics = false,
+                        showAbout = false,
                     )
                     Text(
-                        "诊断日志请点右上角「设置」",
+                        "版本与诊断日志请点右上角「设置」",
                         style = MaterialTheme.typography.bodyMedium,
                         color = GlanceColors.inkMuted,
                     )

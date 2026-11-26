@@ -182,11 +182,18 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
         (transport as? WirelessSoftApTransport)?.setMonitorForeground(foreground)
     }
 
-    /** 离开相册：等 browse.close 退出回放，再回监视并恢复 live。 */
+    /**
+     * 离开相册：MainActivity 已先跳监视。这里关 browse；若 Surface 已挂上则立刻
+     * resumeLive，否则等 attachSurface 触发（见 [expectLiveOnNextSurface]）。
+     */
+    @Volatile private var expectLiveOnNextSurface = false
+
     fun leaveGallery(then: () -> Unit) {
+        expectLiveOnNextSurface = true
         viewModelScope.launch {
             runCatching { gallery.closeAndWait() }
             (transport as? WirelessSoftApTransport)?.resumeLiveAfterGallery()
+            expectLiveOnNextSurface = false
             then()
         }
     }
@@ -194,6 +201,10 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
     fun recoverStaleMonitorFeed() {
         (transport as? WirelessSoftApTransport)?.recoverStaleMonitorFeed()
     }
+
+    /** Debug：注入「只丢视频、ACK 仍活」故障窗，复现 SoftAP 卡顿。 */
+    fun debugDropVideoPackets(durationMs: Long = 8_000L): Boolean =
+        (transport as? WirelessSoftApTransport)?.debugDropVideoPackets(durationMs) == true
 
     fun setStartupPreference(value: StartupPreference) {
         viewModelScope.launch { prefs.setStartupPreference(value) }
@@ -325,6 +336,10 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
     fun attachSurface(surface: Surface?) {
         lastSurface = surface?.takeIf { it.isValid }
         transport?.attachSurface(lastSurface)
+        // 回相册后监视 Surface 常比 browse.close 更早就绪：一挂上就 exitPlayback+enable。
+        if (lastSurface != null && expectLiveOnNextSurface) {
+            (transport as? WirelessSoftApTransport)?.resumeLiveAfterGallery()
+        }
     }
 
     fun notePresented(sourceTimestampNs: Long) {
