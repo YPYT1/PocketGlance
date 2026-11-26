@@ -166,10 +166,22 @@ class WirelessSoftApTransport(
         if (foreground) {
             current.noteMonitorReturned()
             if (pendingSurface?.isValid == true) current.restoreMonitorPictureIfNeeded()
+            current.resumeLiveForMonitor("app foreground")
             if (_state.value.phase == ConnectionPhase.Failed) {
                 cameraTarget?.let(::scheduleWarmRetry)
             }
         }
+    }
+
+    /** 从相册回到监视：退出残留回放并重开 live。 */
+    fun resumeLiveAfterGallery() {
+        session?.resumeLiveForMonitor("gallery closed")
+    }
+
+    /** 监视页周期探测：静置后画面变旧则强制恢复。 */
+    fun recoverStaleMonitorFeed() {
+        if (!monitorForeground || _state.value.pocketState != PocketState.Monitoring) return
+        session?.recoverStaleMonitorFeed()
     }
 
     override fun notePresented(sourceTimestampNs: Long) {
@@ -327,6 +339,16 @@ class WirelessSoftApTransport(
                     if (_state.value.pocketState != next.pocketState) {
                         Log.d(TAG, "camera phase=$phase state=${next.pocketState}")
                         GlanceLog.i("wireless", "phase=$phase state=${next.pocketState} ready=${picture.ready}")
+                    }
+                    val prevChrome = _state.value.chrome
+                    if (prevChrome.shootingModeLabel != next.chrome.shootingModeLabel ||
+                        prevChrome.formatChip != next.chrome.formatChip
+                    ) {
+                        GlanceLog.i(
+                            "chrome",
+                            "mode=${next.chrome.shootingModeLabel} format=${next.chrome.formatChip} " +
+                                "rawMode=0x%02X".format(chrome.shootingMode and 0xFF),
+                        )
                     }
                     _state.value = next
                     if (recovery is SessionRecoveryUi.WaitingForOperator || recovery is SessionRecoveryUi.PausedAfterDrops) {

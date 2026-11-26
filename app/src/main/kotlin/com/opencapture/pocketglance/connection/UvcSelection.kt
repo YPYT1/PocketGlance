@@ -55,11 +55,9 @@ object UvcSelection {
         if (capped.isEmpty()) return null
         val sixteenNine = capped.filter { isSixteenNine(it.width, it.height) }
         val pool = sixteenNine.ifEmpty { capped }
-        return pool.maxWithOrNull(
-            compareBy<UvcSize> { it.width >= it.height }
-                .thenBy { it.area }
-                .thenBy { it.width },
-        )
+        // Preserve the camera's native orientation; the user has not requested rotation.
+        val candidates = pool.filter { it.width >= it.height }.ifEmpty { pool }
+        return candidates.maxWithOrNull(compareBy<UvcSize> { it.area }.thenBy { it.width })
     }
 
     /** 16:9 判定，带小容差以容忍个别厂商的近似尺寸。 */

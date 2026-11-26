@@ -30,7 +30,8 @@
 | `.../connection/WiredUsbTransport.kt` | 有线 UVC（Camera2 外接摄像头直出） |
 | `.../connection/UvcCameraController.kt` | Camera2 外接摄像头控制器 |
 | `.../connection/UvcSelection.kt` | UVC 分辨率选择与接口判定（纯函数） |
-| `.../diagnostics/GlanceLog.kt` | 应用内诊断日志与导出 |
+| `.../diagnostics/GlanceLog.kt` | 应用内诊断日志、清除、导出与外部镜像 |
+| `.../ui/LogViewerScreen.kt` | 设置内查看日志 |
 | `.../connection/GlancePrefs.kt` | DataStore 偏好 |
 | `.../session/SwiftCoreBootstrap.kt` | 加载 `.so` |
 | `.../session/GlanceSessionHost.kt` | PocketSessionHost 实现 |
@@ -39,8 +40,11 @@
 | `.../ui/HomeScreen.kt` | 主页（现在连接） |
 | `.../ui/SettingsScreen.kt` | 设置（默认连接方式） |
 | `.../ui/MonitorScreen.kt` | 监视 HUD（竖屏两排芯片、录制时长独立行） |
-| `.../ui/PreviewLutDialog.kt` | LUT 选择（手机横屏左右栏／竖屏双列／平板多列） |
-| `.../ui/MonitorChromeLabels.kt` | 模式/色彩中文映射 |
+| `.../ui/PreviewLutDialog.kt` | LUT 选择（标签／合集／收藏／搜索） |
+| `app/src/main/assets/built-in-luts/` | 内置打包 LUT（`catalog.tsv` + `.rgba`） |
+| `scripts/pack-built-in-luts.py` | 从 `.cube` 目录打包内置 LUT |
+| `.../ui/MonitorChromeLabels.kt` | 模式/色彩/全景·延时子参数中文映射 |
+| `docs/10-mode-hud-capture.md` | 多模式订阅 key 与 payload 对照 |
 | `.../ui/GalleryScreen.kt` | 相册 |
 | `.../ui/LiveFeedHost.kt` | 无线 TextureView / Surface |
 | `.../ui/UvcFeedHost.kt` | 有线 UVC 直出 TextureView |

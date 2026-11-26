@@ -51,14 +51,15 @@
 
 ### `WiredUsbTransport`
 
-- 只识别带 UVC Video 接口（class `0x0E`）的 Pocket 设备；不声明厂商 Bulk、不碰 MSC/RNDIS/AOA
-- 枚举 `LENS_FACING_EXTERNAL` 摄像头，选 ≤1920×1080 的稳定预览尺寸（优先 16:9）
-- Camera2 打开并把预览帧直出到 `UvcFeedHost` 的 Surface；会话配置完成才 Live，收到帧才 pictureReady
-- 拔线（`USB_DEVICE_DETACHED` / Camera2 `onDisconnected`）关闭会话；插入可由 Manifest 拉起 `connectWired`
+- 用户按「有线连接」后枚举 Camera2 外接摄像头；USB 插入仅记录 Pocket 设备，不把普通文件传输模式当作直播。
+- 不声明 DJI Bulk/MSC/RNDIS/AOA，也不更改 Pocket USB 模式；只负责基本实时预览。
+- 选择不超过 1920×1080 的可用尺寸；Camera2 预览直出到 `UvcFeedHost` 的 Surface。
+- 会话配置完成才 Live，TextureView 收到画面帧后才 pictureReady；没有摄像头 HAL 时提示、不伪报 Live。
+- 拔线或 Camera2 断开关闭会话。
 
 ### `UvcSelection`
 
-纯函数：`UvcSize` + `selectResolution`（≤1080p、优先 16:9）、`hasVideoInterface`（class `0x0E` 判定）；供 JVM 单测。
+纯函数：`UvcSize` + `selectResolution`（最多 1920×1080、优先 16:9，选择横屏时允许竖屏输入）；供 JVM 单测。USB Video 接口类识别仅供检测/诊断，不通过 USB interface 私有收发视频。
 
 ### `UvcCameraController`
 

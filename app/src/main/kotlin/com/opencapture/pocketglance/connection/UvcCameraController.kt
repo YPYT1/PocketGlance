@@ -127,7 +127,7 @@ internal class UvcCameraController(
         }
 
     private fun configureSession(device: CameraDevice, surface: Surface) {
-        if (closed) return
+        if (closed || !surface.isValid) return
         closeSession()
         val builder =
             try {

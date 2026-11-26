@@ -1,6 +1,7 @@
 package com.opencapture.pocketglance.ui
 
 import android.content.res.Configuration
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,21 +9,19 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,12 +43,19 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.opencapture.pocketglance.PreviewLutState
+
+private const val FILTER_FAVORITES = "__favorites__"
+private const val FILTER_ALL = "__all__"
+private const val FILTER_IMPORTED = "__imported__"
+
+private data class LutFilterItem(val id: String, val label: String, val count: Int)
 
 @Composable
 internal fun PreviewLutDialog(
@@ -58,143 +64,173 @@ internal fun PreviewLutDialog(
     colorLabel: String,
     onImport: () -> Unit,
     onSelect: (PreviewLut?) -> Unit,
+    onToggleFavorite: (PreviewLut) -> Unit,
     onClose: () -> Unit,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
-    var selectedCategory by rememberSaveable { mutableStateOf<String?>(null) }
+    var filter by rememberSaveable { mutableStateOf(FILTER_ALL) }
     val configuration = LocalConfiguration.current
     val tablet = configuration.smallestScreenWidthDp >= 600
     val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-    // 手机横屏：左右分栏；竖屏／平板：上方工具 + 下方网格。
-    val sideBySide = !tablet && landscape
 
-    val groups = remember(state.entries) { state.entries.groupBy { it.category ?: "自定义导入" } }
-    val search = query.trim()
-    val showCategories = selectedCategory == null && search.isEmpty()
-    val visibleGroups =
-        remember(groups, selectedCategory, search) {
-            groups
-                .filterKeys { selectedCategory == null || it == selectedCategory }
-                .mapValues { (category, entries) ->
-                    entries.filter {
-                        category.contains(search, ignoreCase = true) ||
-                            it.name.contains(search, ignoreCase = true)
-                    }
-                }
-                .filterValues { it.isNotEmpty() }
+    val packs =
+        remember(state.entries) {
+            state.entries
+                .mapNotNull { it.category }
+                .map(::lutCategoryLabel)
+                .filter { it.isNotBlank() && !isLutDateOrBatchCategory(it) }
+                .distinct()
+                .sorted()
         }
-    val builtinCount = state.entries.count { it.category != null }
-    val subtitle =
-        listOfNotNull("内置 $builtinCount 款", colorLabel.takeUnless { it == "—" }, "仅影响预览")
-            .joinToString(" · ")
+    val tagFilters =
+        remember(state.entries) {
+            LutTagFilters.filter { tag -> state.entries.any { tag in it.tags } }
+        }
+    val railFilters =
+        remember(state.entries, state.favoriteIds, packs, tagFilters) {
+            buildList {
+                add(LutFilterItem(FILTER_ALL, "全部", state.entries.size))
+                add(
+                    LutFilterItem(
+                        FILTER_FAVORITES,
+                        "收藏",
+                        state.entries.count { it.id in state.favoriteIds },
+                    ),
+                )
+                tagFilters.forEach { tag ->
+                    add(LutFilterItem(tag, tag, state.entries.count { tag in it.tags }))
+                }
+                // 合集名与短标签重复时不再占一行（「人像」标签 +「人像合集」合集可并存）。
+                packs.forEach { pack ->
+                    if (pack in tagFilters) return@forEach
+                    add(
+                        LutFilterItem(
+                            pack,
+                            pack,
+                            state.entries.count { lutCategoryLabel(it.category.orEmpty()) == pack },
+                        ),
+                    )
+                }
+                val imported = state.entries.count { !it.isBuiltIn }
+                if (imported > 0) add(LutFilterItem(FILTER_IMPORTED, "导入", imported))
+            }
+        }
+    val search = query.trim()
+    val filtered =
+        remember(state.entries, state.favoriteIds, filter, search) {
+            state.entries.filter { lut ->
+                val matchesFilter =
+                    when (filter) {
+                        FILTER_ALL -> true
+                        FILTER_FAVORITES -> lut.id in state.favoriteIds
+                        FILTER_IMPORTED -> !lut.isBuiltIn
+                        else ->
+                            filter == lutCategoryLabel(lut.category.orEmpty()) || filter in lut.tags
+                    }
+                val matchesSearch =
+                    search.isEmpty() ||
+                        lut.name.contains(search, ignoreCase = true) ||
+                        (lut.category?.contains(search, ignoreCase = true) == true) ||
+                        lut.tags.any { it.contains(search, ignoreCase = true) }
+                matchesFilter && matchesSearch
+            }
+        }
+    val sections =
+        remember(filtered, filter, packs) {
+            if (filter == FILTER_ALL || filter in packs) {
+                filtered
+                    .groupBy { lut ->
+                        lut.category?.let(::lutCategoryLabel)?.takeIf { it.isNotBlank() && !isLutDateOrBatchCategory(it) }
+                            ?: lut.tags.firstOrNull { it != "Pocket4" }
+                            ?: lut.tags.firstOrNull()
+                            ?: "其他"
+                    }
+                    .toList()
+            } else {
+                listOf("" to filtered)
+            }
+        }
 
-    val dialogMaxWidth = if (tablet) 720.dp else if (sideBySide) 720.dp else 560.dp
-    val dialogHeightFraction = when {
-        tablet -> 0.88f
-        sideBySide -> 0.94f
-        else -> 0.92f
-    }
-    val outerPad = if (tablet) PaddingValues(horizontal = 16.dp, vertical = 12.dp) else PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-    val innerPad = if (tablet) PaddingValues(horizontal = 16.dp, vertical = 12.dp) else PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-    val sectionGap = if (tablet) 8.dp else 4.dp
+    val builtinCount = state.entries.count { it.isBuiltIn }
+    val subtitle =
+        listOfNotNull(
+            "内置 $builtinCount",
+            colorLabel.takeUnless { it == "—" },
+            "仅预览",
+        ).joinToString(" · ")
+
+    val dialogMaxWidth =
+        when {
+            tablet -> 980.dp
+            landscape -> 900.dp
+            else -> 640.dp
+        }
+    val railWidth =
+        when {
+            tablet -> 168.dp
+            landscape -> 140.dp
+            else -> 112.dp
+        }
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
             modifier =
                 Modifier
-                    .padding(outerPad)
+                    .padding(if (tablet) 10.dp else 4.dp)
                     .imePadding()
                     .widthIn(max = dialogMaxWidth)
-                    .fillMaxWidth()
-                    .fillMaxHeight(dialogHeightFraction),
+                    .fillMaxWidth(if (tablet || landscape) 0.96f else 0.98f)
+                    .fillMaxHeight(if (tablet) 0.92f else 0.95f),
             color = GlanceColors.canvas,
-            shape = RoundedCornerShape(if (tablet) 24.dp else 16.dp),
+            shape = RoundedCornerShape(if (tablet) 18.dp else 14.dp),
         ) {
-            Column(Modifier.padding(innerPad), verticalArrangement = Arrangement.spacedBy(sectionGap)) {
-                LutDialogHeader(
+            Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                LutTopBar(
                     compact = !tablet,
-                    title = selectedCategory?.let(::lutCategoryTitle) ?: "选择 LUT",
+                    title = "LUT",
                     subtitle = subtitle,
                     query = query,
                     onQueryChange = { query = it },
-                    searchHint = if (selectedCategory == null) "搜索" else "搜索",
-                    onBack = {
-                        // 竖屏进了分类时先退回分类列表；否则退出监视 HUD。
-                        if (!sideBySide && (selectedCategory != null || search.isNotEmpty())) {
-                            selectedCategory = null
-                            query = ""
-                        } else {
-                            onClose()
-                        }
-                    },
-                    onConfirm = onClose,
+                    onClose = onClose,
                 )
+                Spacer(Modifier.height(6.dp))
+                HorizontalDivider(color = GlanceColors.hairline)
 
-                if (sideBySide) {
-                    val railGroups =
-                        remember(groups, search) {
-                            if (search.isEmpty()) {
-                                groups
-                            } else {
-                                groups
-                                    .mapValues { (category, entries) ->
-                                        entries.filter {
-                                            category.contains(search, ignoreCase = true) ||
-                                                it.name.contains(search, ignoreCase = true)
-                                        }
-                                    }
-                                    .filterValues { it.isNotEmpty() }
-                            }
-                        }
-                    Row(Modifier.weight(1f).fillMaxWidth()) {
-                        LutCategoryRail(
-                            groups = railGroups,
-                            selectedCategory = selectedCategory,
-                            selectedLutId = state.selected?.id,
-                            modifier = Modifier.width(168.dp).fillMaxHeight(),
-                            onSelectCategory = { selectedCategory = it },
-                        )
-                        VerticalDivider()
-                        // 右侧只展示 LUT 条目；未选分类时提示点左侧。
-                        LutContentPane(
-                            state = state,
-                            available = available,
-                            showCategories = false,
-                            visibleGroups = if (showCategories) emptyMap() else visibleGroups,
-                            categoryColumns = GridCells.Fixed(1),
-                            emptyHint = if (showCategories) "在左侧选择分类，或搜索 LUT。" else null,
-                            onSelectCategory = { selectedCategory = it },
-                            onSelect = onSelect,
-                            modifier = Modifier.weight(1f).fillMaxHeight().padding(start = 8.dp),
-                        )
-                    }
-                } else {
-                    LutContentPane(
+                Row(Modifier.weight(1f).fillMaxWidth()) {
+                    LutFilterRail(
+                        filters = railFilters,
+                        selected = filter,
+                        onSelect = { filter = it },
+                        modifier = Modifier.width(railWidth).fillMaxHeight(),
+                    )
+                    VerticalDivider(color = GlanceColors.hairline)
+                    LutListPane(
                         state = state,
                         available = available,
-                        showCategories = showCategories,
-                        visibleGroups = visibleGroups,
-                        categoryColumns =
-                            if (tablet) GridCells.Adaptive(150.dp) else GridCells.Fixed(2),
-                        emptyHint = null,
-                        onSelectCategory = { selectedCategory = it },
+                        sections = sections,
+                        emptyFavorites = filter == FILTER_FAVORITES,
                         onSelect = onSelect,
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        onToggleFavorite = onToggleFavorite,
+                        modifier = Modifier.weight(1f).fillMaxHeight().padding(start = 8.dp),
                     )
                 }
 
-                HorizontalDivider()
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                HorizontalDivider(color = GlanceColors.hairline)
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     TextButton(
                         onClick = { onSelect(null) },
                         enabled = state.selected != null || state.loading != null,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    ) { Text("关闭 LUT") }
+                    ) { Text("关闭 LUT", fontSize = 13.sp) }
                     TextButton(
                         onClick = onImport,
                         enabled = !state.importing,
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                    ) { Text("导入 .cube") }
+                    ) { Text(if (state.importing) "导入中…" else "导入 .cube", fontSize = 13.sp) }
                 }
             }
         }
@@ -202,89 +238,63 @@ internal fun PreviewLutDialog(
 }
 
 @Composable
-private fun LutDialogHeader(
+private fun LutTopBar(
     compact: Boolean,
     title: String,
     subtitle: String,
     query: String,
     onQueryChange: (String) -> Unit,
-    searchHint: String,
-    onBack: () -> Unit,
-    onConfirm: () -> Unit,
+    onClose: () -> Unit,
 ) {
-    if (compact) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            TextButton(onClick = onBack, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
-                Text("返回", color = GlanceColors.azure, maxLines = 1, fontSize = 13.sp)
-            }
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subtitle, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            LutCompactSearch(
-                query = query,
-                onQueryChange = onQueryChange,
-                hint = searchHint,
-                modifier = Modifier.widthIn(min = 88.dp, max = 132.dp),
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+                maxLines = 1,
             )
-            TextButton(onClick = onConfirm, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) {
-                Text("确定", color = GlanceColors.pear, maxLines = 1, fontSize = 13.sp)
-            }
+            Text(subtitle, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-    } else {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            MonitorBackButton(onBack)
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(subtitle, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            LutCompactSearch(
-                query = query,
-                onQueryChange = onQueryChange,
-                hint = searchHint,
-                modifier = Modifier.widthIn(min = 160.dp, max = 220.dp),
-            )
-            TextButton(onClick = onConfirm) {
-                Text("确定", color = GlanceColors.pear)
-            }
+        LutSearchField(
+            query = query,
+            onQueryChange = onQueryChange,
+            modifier = Modifier.widthIn(min = if (compact) 96.dp else 160.dp, max = if (compact) 160.dp else 240.dp),
+        )
+        TextButton(onClick = onClose, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+            Text("完成", color = GlanceColors.pear, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
         }
     }
 }
 
 @Composable
-private fun LutCompactSearch(
+private fun LutSearchField(
     query: String,
     onQueryChange: (String) -> Unit,
-    hint: String,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(10.dp)
     BasicTextField(
         value = query,
         onValueChange = onQueryChange,
         singleLine = true,
         textStyle = TextStyle(color = GlanceColors.ink, fontSize = 13.sp),
         cursorBrush = SolidColor(GlanceColors.azure),
-        modifier = modifier.height(32.dp),
+        modifier = modifier.height(34.dp),
         decorationBox = { inner ->
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(32.dp)
-                    .border(1.dp, GlanceColors.ink.copy(alpha = 0.28f), shape)
-                    .padding(horizontal = 8.dp),
+                    .height(34.dp)
+                    .border(1.dp, GlanceColors.ink.copy(alpha = 0.22f), shape)
+                    .padding(horizontal = 10.dp),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 if (query.isEmpty()) {
-                    Text(hint, color = GlanceColors.inkMuted, fontSize = 12.sp, maxLines = 1)
+                    Text("搜索", color = GlanceColors.inkMuted, fontSize = 12.sp, maxLines = 1)
                 }
                 inner()
             }
@@ -293,45 +303,47 @@ private fun LutCompactSearch(
 }
 
 @Composable
-private fun LutCategoryRail(
-    groups: Map<String, List<PreviewLut>>,
-    selectedCategory: String?,
-    selectedLutId: String?,
-    onSelectCategory: (String) -> Unit,
+private fun LutFilterRail(
+    filters: List<LutFilterItem>,
+    selected: String,
+    onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
-        modifier = modifier.padding(end = 4.dp),
+        modifier = modifier.padding(end = 6.dp, top = 8.dp, bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
-        contentPadding = PaddingValues(vertical = 2.dp),
+        contentPadding = PaddingValues(end = 2.dp),
     ) {
-        items(groups.entries.toList(), key = { it.key }) { (category, entries) ->
-            val applied = entries.any { it.id == selectedLutId }
-            val active = category == selectedCategory
+        items(filters, key = { it.id }) { item ->
+            val active = item.id == selected
             Surface(
-                color =
-                    when {
-                        active -> GlanceColors.pear.copy(alpha = 0.45f)
-                        applied -> GlanceColors.pear.copy(alpha = 0.22f)
-                        else -> GlanceColors.surface
-                    },
+                color = if (active) GlanceColors.pear.copy(alpha = 0.5f) else GlanceColors.surface,
                 shape = RoundedCornerShape(10.dp),
+                border =
+                    BorderStroke(
+                        1.dp,
+                        if (active) GlanceColors.pear else GlanceColors.ink.copy(alpha = 0.1f),
+                    ),
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .clickable(role = Role.Button) { onSelectCategory(category) }
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                        .clickable(role = Role.Button) { onSelect(item.id) }
+                        .padding(horizontal = 10.dp, vertical = 9.dp),
                 ) {
                     Text(
-                        lutCategoryTitle(category),
+                        item.label,
                         style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                        color = GlanceColors.ink,
                     )
                     Text(
-                        "${entries.size} 款" + if (applied) " · 使用中" else "",
-                        style = MaterialTheme.typography.bodySmall,
+                        "${item.count}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = GlanceColors.inkMuted,
                         maxLines = 1,
                     )
                 }
@@ -341,101 +353,79 @@ private fun LutCategoryRail(
 }
 
 @Composable
-private fun LutContentPane(
+private fun LutListPane(
     state: PreviewLutState,
     available: Boolean,
-    showCategories: Boolean,
-    visibleGroups: Map<String, List<PreviewLut>>,
-    categoryColumns: GridCells,
-    emptyHint: String?,
-    onSelectCategory: (String) -> Unit,
+    sections: List<Pair<String, List<PreviewLut>>>,
+    emptyFavorites: Boolean,
     onSelect: (PreviewLut?) -> Unit,
+    onToggleFavorite: (PreviewLut) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    LazyVerticalGrid(
-        columns = if (showCategories) categoryColumns else GridCells.Fixed(1),
-        modifier = modifier.then(if (showCategories) Modifier else Modifier.selectableGroup()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-        contentPadding = PaddingValues(bottom = 4.dp),
-    ) {
-        if (state.loadingCatalog) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                CircularProgressIndicator(Modifier.padding(12.dp))
+    when {
+        state.loadingCatalog -> {
+            Box(modifier, contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = GlanceColors.azure, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
             }
         }
-        if (state.catalogUnavailable) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
+        state.catalogUnavailable && state.entries.isEmpty() -> {
+            Box(modifier.padding(16.dp), contentAlignment = Alignment.Center) {
                 Text("未读取到内置 LUT，请重新安装完整版本。", color = GlanceColors.coral)
             }
         }
-        if (!available) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Text("当前直播渲染无法应用 LUT。", color = GlanceColors.coral)
-            }
-        }
-        state.loading?.let { lut ->
-            item(span = { GridItemSpan(maxLineSpan) }) { Text("正在读取「${lut.name}」…") }
-        }
-        state.message?.let { message ->
-            item(span = { GridItemSpan(maxLineSpan) }) { Text(message) }
-        }
-        if (visibleGroups.isEmpty() && emptyHint != null && !state.loadingCatalog) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Text(emptyHint, color = GlanceColors.inkMuted)
-            }
-        } else if (visibleGroups.isEmpty() && state.entries.isNotEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) { Text("没有匹配的 LUT。") }
-        }
-        visibleGroups.forEach { (category, entries) ->
-            if (showCategories) {
-                item(key = "category:$category") {
-                    val applied = entries.any { it.id == state.selected?.id }
-                    Surface(
-                        color = if (applied) GlanceColors.pear.copy(alpha = 0.35f) else GlanceColors.surface,
-                        shape = RoundedCornerShape(12.dp),
-                    ) {
-                        Column(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable(role = Role.Button) { onSelectCategory(category) }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                        ) {
-                            Text(
-                                lutCategoryTitle(category),
-                                style = MaterialTheme.typography.titleSmall,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                "${entries.size} 款" + if (applied) " · 使用中" else "",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    }
+        else -> {
+            Column(modifier) {
+                if (!available) {
+                    Text(
+                        "当前直播渲染无法应用 LUT。",
+                        color = GlanceColors.coral,
+                        modifier = Modifier.padding(vertical = 6.dp),
+                        fontSize = 13.sp,
+                    )
                 }
-            } else {
-                if (visibleGroups.size > 1) {
-                    item(key = "heading:$category", span = { GridItemSpan(maxLineSpan) }) {
+                state.loading?.let {
+                    Text("正在读取「${it.name}」…", Modifier.padding(vertical = 4.dp), fontSize = 13.sp)
+                }
+                state.message?.let {
+                    Text(it, Modifier.padding(vertical = 4.dp), fontSize = 13.sp, color = GlanceColors.inkMuted)
+                }
+                val empty = sections.all { it.second.isEmpty() }
+                if (empty) {
+                    Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                         Text(
-                            lutCategoryTitle(category),
-                            Modifier.padding(top = 4.dp),
-                            style = MaterialTheme.typography.labelLarge,
+                            if (emptyFavorites) "还没有收藏。点右侧星标即可收藏。" else "没有匹配的 LUT。",
+                            color = GlanceColors.inkMuted,
+                            fontSize = 13.sp,
                         )
                     }
-                }
-                items(entries, key = { it.id }) { lut ->
-                    val selected = state.selected?.id == lut.id
-                    Surface(color = if (selected) GlanceColors.pear.copy(alpha = 0.35f) else GlanceColors.canvas) {
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .selectable(selected, enabled = available, role = Role.RadioButton) { onSelect(lut) }
-                                .padding(horizontal = 10.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(lut.name, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            if (selected) Text("已应用", style = MaterialTheme.typography.labelSmall)
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 2.dp, bottom = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        sections.forEach { (heading, entries) ->
+                            if (entries.isEmpty()) return@forEach
+                            if (heading.isNotBlank() && sections.count { it.second.isNotEmpty() } > 1) {
+                                item(key = "h:$heading") {
+                                    Text(
+                                        heading,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = GlanceColors.inkMuted,
+                                        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp, start = 2.dp),
+                                    )
+                                }
+                            }
+                            items(entries, key = { it.id }) { lut ->
+                                LutRow(
+                                    lut = lut,
+                                    selected = state.selected?.id == lut.id,
+                                    favorite = lut.id in state.favoriteIds,
+                                    enabled = available,
+                                    onSelect = { onSelect(lut) },
+                                    onToggleFavorite = { onToggleFavorite(lut) },
+                                )
+                            }
                         }
                     }
                 }
@@ -444,6 +434,74 @@ private fun LutContentPane(
     }
 }
 
-private val lutCategoryCount = Regex("[（(]\\d+款[）)]$")
-
-private fun lutCategoryTitle(category: String): String = category.replace(lutCategoryCount, "").trim()
+@Composable
+private fun LutRow(
+    lut: PreviewLut,
+    selected: Boolean,
+    favorite: Boolean,
+    enabled: Boolean,
+    onSelect: () -> Unit,
+    onToggleFavorite: () -> Unit,
+) {
+    val shape = RoundedCornerShape(12.dp)
+    Surface(
+        color = if (selected) GlanceColors.pear.copy(alpha = 0.28f) else GlanceColors.surface,
+        shape = shape,
+        border =
+            BorderStroke(
+                1.dp,
+                if (selected) GlanceColors.pear else GlanceColors.ink.copy(alpha = 0.12f),
+            ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onSelect)
+                .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    lut.name,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = GlanceColors.ink,
+                )
+                val meta =
+                    buildList {
+                        lut.category?.let(::add)
+                        addAll(lut.tags.take(3))
+                    }.distinct().joinToString(" · ")
+                if (meta.isNotEmpty()) {
+                    Text(
+                        meta,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = GlanceColors.inkMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (selected) {
+                Text(
+                    "已应用",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = GlanceColors.ink,
+                    modifier = Modifier.padding(end = 4.dp),
+                )
+            }
+            Text(
+                if (favorite) "★" else "☆",
+                modifier =
+                    Modifier
+                        .clickable(role = Role.Button, onClick = onToggleFavorite)
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                color = if (favorite) GlanceColors.pear else GlanceColors.inkMuted,
+                fontSize = 18.sp,
+            )
+        }
+    }
+}

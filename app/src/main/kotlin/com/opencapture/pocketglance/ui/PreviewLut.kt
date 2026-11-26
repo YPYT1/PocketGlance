@@ -5,7 +5,57 @@ import com.opencapture.opencine.media.MonitorLUTCube
 import java.io.Reader
 import kotlin.math.floor
 
-internal data class PreviewLut(val id: String, val name: String, val category: String? = null)
+internal data class PreviewLut(
+    val id: String,
+    val name: String,
+    /** Built-in pack / 合集；`null` = 用户导入. */
+    val category: String? = null,
+    val tags: Set<String> = emptySet(),
+) {
+    val isBuiltIn: Boolean get() = category != null
+}
+
+/** 筛选芯片顺序（收藏／全部另算）。 */
+internal val LutTagFilters: List<String> =
+    listOf("人像", "风景", "天空", "胶片", "夜景", "美食", "艺术", "季节", "Pocket4")
+
+private val lutCountSuffix = Regex("[（(]?\\s*\\d+\\s*款\\s*[）)]?")
+private val lutDateOrBatchToken =
+    Regex(
+        "20\\d{2}\\d{2}|20\\d{2}\\s*年|20\\d{2}|\\d{2}\\s*年|\\d{1,2}\\s*月|提前上新|上新|第[一二三四五六七八九十\\d]+弹|更新|LUT",
+        RegexOption.IGNORE_CASE,
+    )
+private val lutThemePackNames =
+    mapOf(
+        "人像" to "人像合集",
+        "风景" to "风景合集",
+        "天空" to "天空合集",
+        "胶片" to "胶片合集",
+        "夜景" to "夜景合集",
+        "美食" to "美食合集",
+        "艺术" to "艺术合集",
+        "季节" to "季节合集",
+    )
+
+/** 分类展示名：去「17款」、备注括号，并剥掉年份／上新批次词，留下主题合集名。 */
+internal fun lutCategoryLabel(raw: String): String {
+    var text = raw.replace(Regex("\\s+"), " ").trim()
+    text = text.replace(lutCountSuffix, "")
+    text = text.replace(Regex("[（(][^）)]*[）)]"), "")
+    text = text.trim(' ', '-', '_', '·')
+    while (true) {
+        val next = text.replace(lutDateOrBatchToken, " ").replace(Regex("\\s+"), " ").trim(' ', '-', '_', '·', '/')
+        if (next == text) break
+        text = next
+    }
+    if (text.isEmpty() || text.matches(Regex("\\d+")) || text in setOf("滤镜文件", "导入教程", "滤镜")) {
+        return ""
+    }
+    return lutThemePackNames[text] ?: text
+}
+
+/** 剥干净后没有主题名 → 纯日期／上新批次，不当侧栏分类。 */
+internal fun isLutDateOrBatchCategory(raw: String): Boolean = lutCategoryLabel(raw).isEmpty()
 
 internal fun parsePreviewCube(source: Reader): MonitorLUTCube {
     var size = 0
@@ -90,4 +140,22 @@ internal fun previewLook(cube: MonitorLUTCube): FeedEffectsRenderPlan = with(Fee
     FeedEffectsRenderPlan(cube, null, null, false, peakingColor, peakingRatioThreshold, peakingNoiseGate,
         false, zebraHighlightCode, zebraHighlightColor, false, zebraMidtoneCode, zebraMidtoneHalf,
         zebraMidtoneColor, false, splitVertical)
+}
+
+internal fun parseBuiltInLutCatalogLine(line: String): PreviewLut? {
+    val fields = line.split('\t')
+    if (fields.size < 3) return null
+    val tags =
+        fields.getOrNull(3)
+            ?.split(',')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.toSet()
+            .orEmpty()
+    return PreviewLut(
+        id = "built-in-luts/${fields[0]}",
+        name = fields[2],
+        category = fields[1],
+        tags = tags,
+    )
 }

@@ -16,7 +16,19 @@ class GlancePrefs(private val context: Context) {
     private val lastModeKey = stringPreferencesKey("last_connection_mode")
     private val lastCameraIdKey = stringPreferencesKey("last_camera_id")
     private val monitorOrientationKey = stringPreferencesKey("monitor_orientation")
+    private val favoriteLutsKey = stringSetPreferencesKey("favorite_lut_ids")
     private val galleryTagPrefix = "gallery_tags:"
+
+    val favoriteLutIds: Flow<Set<String>> =
+        context.glanceDataStore.data.map { prefs -> prefs[favoriteLutsKey].orEmpty() }
+
+    suspend fun setFavoriteLut(id: String, favorite: Boolean) {
+        context.glanceDataStore.edit { preferences ->
+            val current = preferences[favoriteLutsKey].orEmpty()
+            preferences[favoriteLutsKey] =
+                if (favorite) current + id else current - id
+        }
+    }
 
     val galleryTags: Flow<Map<String, Set<String>>> = context.glanceDataStore.data.map { preferences ->
         preferences.asMap().entries.mapNotNull { (key, value) ->

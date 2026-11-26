@@ -227,9 +227,15 @@ internal class GlanceGallery(private val scope: CoroutineScope, private val sour
         _state.value = GalleryState()
     }
 
+    /** 取消会话并等到 browse.close → returnToLive / exitPlayback 跑完。 */
     suspend fun closeAndWait() {
+        val browse = browseHandle
         close()
         listJob?.cancelAndJoin()
         sessionJob?.cancelAndJoin()
+        // session 已结束后 finally 可能未挂上 browse；幂等补一刀。
+        if (browse != null) {
+            runCatching { withContext(NonCancellable) { browse.close() } }
+        }
     }
 }

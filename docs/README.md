@@ -16,6 +16,7 @@
 | 8 | [07-file-map.md](./07-file-map.md) | 路径 ↔ 职责速查 |
 | 9 | [08-roadmap-gaps.md](./08-roadmap-gaps.md) | 已实现 vs 占位/未完成 |
 | 10 | [09-wired-usb-evidence.md](./09-wired-usb-evidence.md) | Pocket 4P 有线 USB 实机接口证据 |
+| 11 | [10-mode-hud-capture.md](./10-mode-hud-capture.md) | 多模式 HUD：订阅 key / payload 对照与未证实项 |
 
 ## 一句话定位
 

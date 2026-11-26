@@ -67,16 +67,14 @@ class WiredUsbTransport(
 
         val device = seedDevice?.takeIf { isPocketDevice(it) } ?: findPocketDevice()
         if (device != null) {
+            // Watch detach for session cleanup; Camera HAL retains ownership of the video interface.
             boundDevice = device
-            logInterfaces(device)
-            if (isPocketUvcDevice(device)) {
-                GlanceLog.i("wired", "UVC USB device ${deviceLabel(device)}")
-            } else {
-                GlanceLog.i("wired", "Pocket USB device is not exposing a UVC interface yet")
-            }
+            GlanceLog.i("wired", "Pocket USB descriptor visible=${isPocketUvcDevice(device)} ${deviceLabel(device)}")
         } else {
             GlanceLog.i("wired", "no app-visible Pocket USB descriptor; continuing with Camera2 external discovery")
         }
+        // Camera2 owns the UVC interface on supported devices. Do not claim an interface even
+        // when UsbManager also exposes a UsbDevice descriptor for that same Pocket.
 
         if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.CAMERA) !=
             PackageManager.PERMISSION_GRANTED
@@ -183,7 +181,7 @@ class WiredUsbTransport(
                 mode = mode,
                 phase = ConnectionPhase.Live,
                 message = "有线 UVC 摄像头已连接",
-                cameraVertical = false,
+                cameraVertical = pictureWidth < pictureHeight,
                 cameraPoseRotation = PictureRotation.Upright,
                 pictureWidth = pictureWidth,
                 pictureHeight = pictureHeight,
@@ -273,6 +271,9 @@ class WiredUsbTransport(
         GlanceLog.w("wired", "fail: $message")
         controller?.close()
         controller = null
+        detachReceiver?.let { runCatching { appContext.unregisterReceiver(it) } }
+        detachReceiver = null
+        boundDevice = null
         _state.value =
             ConnectionState(
                 mode = mode,

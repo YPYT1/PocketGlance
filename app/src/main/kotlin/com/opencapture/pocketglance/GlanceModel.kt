@@ -25,6 +25,7 @@ import com.opencapture.pocketglance.gallery.GlanceGallery
 import com.opencapture.pocketglance.monitor.MonitorOrientation
 import com.opencapture.pocketglance.session.LiveKeepaliveService
 import com.opencapture.pocketglance.ui.PreviewLut
+import com.opencapture.pocketglance.ui.parseBuiltInLutCatalogLine
 import com.opencapture.pocketglance.ui.parsePreviewCube
 import com.opencapture.pocketglance.ui.previewLook
 import java.io.IOException
@@ -44,6 +45,7 @@ import kotlinx.coroutines.withContext
 
 internal data class PreviewLutState(
     val entries: List<PreviewLut> = emptyList(),
+    val favoriteIds: Set<String> = emptySet(),
     val loadingCatalog: Boolean = true,
     val catalogUnavailable: Boolean = false,
     val selected: PreviewLut? = null,
@@ -75,23 +77,32 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch {
+            prefs.favoriteLutIds.collect { ids ->
+                _previewLuts.value = _previewLuts.value.copy(favoriteIds = ids)
+            }
+        }
+        viewModelScope.launch {
             val builtIns = withContext(Dispatchers.IO) {
                 try {
                     app.assets.open("built-in-luts/catalog.tsv").bufferedReader().useLines { lines ->
-                        lines.mapNotNull { line ->
-                            val fields = line.split('\t', limit = 3)
-                            if (fields.size == 3) PreviewLut("built-in-luts/${fields[0]}", fields[2], fields[1]) else null
-                        }.toList()
+                        lines.mapNotNull(::parseBuiltInLutCatalogLine).toList()
                     }
                 } catch (_: IOException) {
                     emptyList()
                 }
             }
             _previewLuts.value = _previewLuts.value.copy(
-                entries = builtIns + _previewLuts.value.entries,
+                entries = builtIns + _previewLuts.value.entries.filterNot { it.isBuiltIn },
                 loadingCatalog = false,
                 catalogUnavailable = builtIns.isEmpty(),
             )
+        }
+    }
+
+    internal fun toggleFavoriteLut(lut: PreviewLut) {
+        viewModelScope.launch {
+            val favorite = lut.id !in _previewLuts.value.favoriteIds
+            prefs.setFavoriteLut(lut.id, favorite)
         }
     }
 
@@ -169,6 +180,19 @@ class GlanceModel(app: Application) : AndroidViewModel(app) {
     fun setMonitorForeground(foreground: Boolean) {
         _monitorForeground.value = foreground
         (transport as? WirelessSoftApTransport)?.setMonitorForeground(foreground)
+    }
+
+    /** 离开相册：等 browse.close 退出回放，再回监视并恢复 live。 */
+    fun leaveGallery(then: () -> Unit) {
+        viewModelScope.launch {
+            runCatching { gallery.closeAndWait() }
+            (transport as? WirelessSoftApTransport)?.resumeLiveAfterGallery()
+            then()
+        }
+    }
+
+    fun recoverStaleMonitorFeed() {
+        (transport as? WirelessSoftApTransport)?.recoverStaleMonitorFeed()
     }
 
     fun setStartupPreference(value: StartupPreference) {

@@ -79,13 +79,25 @@ fun MonitorScreen(
         }
     // 芯片两排仅竖屏；录制时长位置按手机／平板分开（见下方顶栏）。
     val splitChrome = portrait
+    // 首帧／稳定窗口必须盖住整屏（含挖孔区）。遮罩若放在 displayCutoutPadding 内，
+    // 横屏左侧刘海空白会露出底下 LiveFeedHost 的窄条画面。
+    val coverFeed =
+        connection.phase == ConnectionPhase.Live &&
+            (startingFeed || !connection.pictureReady)
 
-    Box(modifier = Modifier.fillMaxSize().displayCutoutPadding()) {
-        if (connection.phase == ConnectionPhase.Live && connection.pictureReady && startingFeed && connection.pocketState == PocketState.Monitoring) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        // 先画全屏遮罩（含挖孔），再叠 HUD，避免盖住顶栏／底栏。
+        if (coverFeed) {
             Box(Modifier.fillMaxSize().background(GlanceColors.ink), contentAlignment = Alignment.Center) {
-                Text("正在稳定直播画面…", color = inkSoft, fontSize = 14.sp)
+                Text(
+                    if (connection.pictureReady) "正在稳定直播画面…" else "正在等待首帧…",
+                    color = inkSoft,
+                    fontSize = 14.sp,
+                )
             }
         }
+
+        Box(modifier = Modifier.fillMaxSize().displayCutoutPadding()) {
         if (connection.pocketState == PocketState.Recovering || connection.pocketState == PocketState.NeedsRetry ||
             connection.pocketState == PocketState.TakenOver) {
             Column(
@@ -101,13 +113,6 @@ fun MonitorScreen(
             Text(
                 connection.message.ifBlank { "等待画面…" },
                 color = GlanceColors.canvas,
-                modifier = Modifier.align(Alignment.Center),
-            )
-        } else if (!connection.pictureReady) {
-            Text(
-                "正在等待首帧…",
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 14.sp,
                 modifier = Modifier.align(Alignment.Center),
             )
         }
@@ -269,6 +274,7 @@ fun MonitorScreen(
                 }
             }
         }
+        }
     }
 }
 
@@ -279,7 +285,7 @@ private fun ChromeChipLine(chips: List<String>, modifier: Modifier = Modifier) {
         return
     }
     Text(
-        chips.joinToString("   ·   "),
+        chips.joinToString(" · "),
         modifier = modifier,
         color = Color.White,
         fontSize = 13.sp,

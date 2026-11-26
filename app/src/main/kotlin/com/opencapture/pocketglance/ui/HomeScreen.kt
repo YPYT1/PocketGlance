@@ -38,9 +38,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
+import com.opencapture.pocketglance.connection.ConnectionMode
 import com.opencapture.pocketglance.connection.ConnectionPhase
 import com.opencapture.pocketglance.connection.ConnectionState
-import com.opencapture.pocketglance.connection.ConnectionMode
 import com.opencapture.pocketglance.connection.FoundCameraRow
 import com.opencapture.pocketglance.connection.PocketState
 import com.opencapture.pocketglance.connection.StartupPreference
@@ -52,6 +52,7 @@ fun HomeScreen(
     permissionHint: String?,
     onConnectWireless: () -> Unit,
     onConnectWired: () -> Unit,
+    wiredCameraPermissionHint: String? = null,
     onPickCamera: (String) -> Unit,
     onDisconnect: () -> Unit,
     onRetryRecovery: () -> Unit,
@@ -62,8 +63,6 @@ fun HomeScreen(
     onStartup: (StartupPreference) -> Unit,
     monitorOrientation: MonitorOrientation,
     onMonitorOrientation: (MonitorOrientation) -> Unit,
-    onExportLogs: () -> Unit,
-    exportNote: String? = null,
 ) {
     val tablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
     BoxWithConstraints(
@@ -103,13 +102,11 @@ fun HomeScreen(
                         color = GlanceColors.inkMuted,
                     )
                 }
-                // 平板双栏已内嵌设置，手机仍用右上角进设置页。
-                if (!twoColumns) {
-                    TextButton(onClick = onOpenSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = null, tint = GlanceColors.azure, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.size(7.dp))
-                        Text("设置", color = GlanceColors.azure)
-                    }
+                // 诊断日志只在独立设置页；平板首页右侧只保留显示／连接偏好。
+                TextButton(onClick = onOpenSettings) {
+                    Icon(Icons.Default.Settings, contentDescription = null, tint = GlanceColors.azure, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(7.dp))
+                    Text("设置", color = GlanceColors.azure)
                 }
             }
 
@@ -120,12 +117,16 @@ fun HomeScreen(
                     onPickCamera = onPickCamera,
                     onDisconnect = onDisconnect,
                     onRetryRecovery = onRetryRecovery,
+                    onConnectWired = onConnectWired,
                     onRequestPermission = onRequestPermission,
                 )
             }
 
             val connectPanel: @Composable () -> Unit = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    wiredCameraPermissionHint?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = GlanceColors.coral)
+                    }
                     Text("现在连接", style = MaterialTheme.typography.titleLarge)
                     ConnectTile(
                         title = "无线连接",
@@ -146,14 +147,18 @@ fun HomeScreen(
 
             val settingsPanel: @Composable () -> Unit = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("设置", style = MaterialTheme.typography.titleLarge)
+                    Text("常用设置", style = MaterialTheme.typography.titleLarge)
                     SettingsContent(
                         startup = startup,
                         onStartup = onStartup,
                         monitorOrientation = monitorOrientation,
                         onMonitorOrientation = onMonitorOrientation,
-                        onExportLogs = onExportLogs,
-                        exportNote = exportNote,
+                        showDiagnostics = false,
+                    )
+                    Text(
+                        "诊断日志请点右上角「设置」",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = GlanceColors.inkMuted,
                     )
                 }
             }
@@ -183,6 +188,7 @@ private fun StatusPanel(
     onPickCamera: (String) -> Unit,
     onDisconnect: () -> Unit,
     onRetryRecovery: () -> Unit,
+    onConnectWired: () -> Unit,
     onRequestPermission: () -> Unit,
 ) {
     val show =
@@ -246,14 +252,21 @@ private fun StatusPanel(
                         Text("断开", color = GlanceColors.coral)
                     }
                 }
-                if (connection.pocketState == PocketState.NeedsRetry || connection.pocketState == PocketState.TakenOver) {
+                if (connection.mode == ConnectionMode.Wired) {
+                    Text("有线模式只显示 UVC 画面。对焦、参数控制和相册请改用无线连接。", style = MaterialTheme.typography.bodySmall)
+                }
+                if (connection.mode == ConnectionMode.Wireless &&
+                    (connection.pocketState == PocketState.NeedsRetry || connection.pocketState == PocketState.TakenOver)) {
                     TextButton(onClick = onRetryRecovery) { Text("重试连接") }
                 }
             }
             ConnectionPhase.Failed -> {
                 Text(connection.message, style = MaterialTheme.typography.bodyLarge, color = GlanceColors.coral)
+                if (connection.mode == ConnectionMode.Wired) {
+                    TextButton(onClick = onConnectWired) { Text("重试 UVC 连接") }
+                }
                 TextButton(onClick = onDisconnect) {
-                    Text("清除状态")
+                    Text("返回")
                 }
             }
             ConnectionPhase.Idle -> Unit

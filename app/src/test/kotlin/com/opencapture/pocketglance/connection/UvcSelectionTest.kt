@@ -31,6 +31,19 @@ class UvcSelectionTest {
     }
 
     @Test
+    fun allowsPortrait1080pAndPrefersLandscapeWhenBothAreAvailable() {
+        assertEquals(
+            UvcSize(1920, 1080),
+            UvcSelection.selectResolution(listOf(UvcSize(1920, 1080), UvcSize(1080, 1920))),
+        )
+    }
+
+    @Test
+    fun acceptsPortrait1080pWhenNoLandscapeFormatIsAvailable() {
+        assertEquals(UvcSize(1080, 1920), UvcSelection.selectResolution(listOf(UvcSize(1080, 1920))))
+    }
+
+    @Test
     fun fallsBackToLargestNonSixteenNineWhenNoWidescreenAvailable() {
         val selected = UvcSelection.selectResolution(
             listOf(UvcSize(640, 480), UvcSize(1600, 1000), UvcSize(320, 240)),

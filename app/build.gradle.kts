@@ -8,24 +8,38 @@ val supportedAndroidAbi = "arm64-v8a"
 val resolvedVersionCode: Int =
     (findProperty("versionCode") ?: property("pocketglance.versionCode")).toString().toInt()
 val resolvedVersionName: String = property("pocketglance.versionName").toString()
-val suppliedLutPack = providers.gradleProperty("pocketglance.lutPack").orNull?.let(::file)
-    ?: file("${System.getProperty("user.home")}/Downloads/2 大疆Dlog-M专用LUT【温影工坊】")
+// 内置 LUT 已提交在 app/src/main/assets/built-in-luts/。
+// 仅当本地缺少 catalog 时，才从 Downloads 目录现场打包进 generated assets。
+val committedLutCatalog = layout.projectDirectory.file("src/main/assets/built-in-luts/catalog.tsv")
+val suppliedLutRoots: List<java.io.File> =
+    providers.gradleProperty("pocketglance.lutPack").orNull?.let { listOf(file(it)) }
+        ?: listOf(
+            file("${System.getProperty("user.home")}/Downloads/Pocket4滤镜LUT"),
+            file("${System.getProperty("user.home")}/Downloads/滤镜文件"),
+        )
 abstract class PackPreviewLuts @javax.inject.Inject constructor(
     private val executor: org.gradle.process.ExecOperations,
 ) : DefaultTask() {
-    @get:InputDirectory abstract val source: DirectoryProperty
+    @get:InputFiles abstract val roots: ConfigurableFileCollection
     @get:InputFile abstract val script: RegularFileProperty
     @get:OutputDirectory abstract val output: DirectoryProperty
 
     @TaskAction fun pack() {
-        executor.exec { commandLine("python3", script.get().asFile, source.get().asFile, output.get().asFile) }
+        val args = mutableListOf(
+            "python3",
+            script.get().asFile.absolutePath,
+            output.get().asFile.absolutePath,
+        )
+        args += roots.files.map { it.absolutePath }
+        executor.exec { commandLine(args) }
     }
 }
 
 val packPreviewLuts by tasks.registering(PackPreviewLuts::class) {
-    source.set(suppliedLutPack)
+    roots.from(suppliedLutRoots)
     script.set(rootProject.file("scripts/pack-built-in-luts.py"))
     output.set(layout.buildDirectory.dir("generated/previewLutAssets"))
+    onlyIf { !committedLutCatalog.asFile.exists() }
 }
 
 android {
@@ -85,7 +99,9 @@ android {
 }
 
 androidComponents.onVariants { variant ->
-    variant.sources.assets?.addGeneratedSourceDirectory(packPreviewLuts, PackPreviewLuts::output)
+    if (!committedLutCatalog.asFile.exists()) {
+        variant.sources.assets?.addGeneratedSourceDirectory(packPreviewLuts, PackPreviewLuts::output)
+    }
 }
 
 dependencies {

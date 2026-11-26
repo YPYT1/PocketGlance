@@ -40,8 +40,12 @@ fun SettingsScreen(
     onMonitorOrientation: (MonitorOrientation) -> Unit,
     backToMonitor: Boolean,
     onBack: () -> Unit,
+    onViewLogs: () -> Unit,
+    onClearLogs: () -> Unit,
     onExportLogs: () -> Unit,
+    onSyncLogsForComputer: () -> Unit,
     exportNote: String? = null,
+    computerHint: String? = null,
 ) {
     Box(Modifier.fillMaxSize().background(GlanceColors.canvas), contentAlignment = Alignment.TopCenter) {
         Column(
@@ -61,22 +65,35 @@ fun SettingsScreen(
                 onStartup = onStartup,
                 monitorOrientation = monitorOrientation,
                 onMonitorOrientation = onMonitorOrientation,
+                showDiagnostics = true,
+                onViewLogs = onViewLogs,
+                onClearLogs = onClearLogs,
                 onExportLogs = onExportLogs,
+                onSyncLogsForComputer = onSyncLogsForComputer,
                 exportNote = exportNote,
+                computerHint = computerHint,
             )
         }
     }
 }
 
-/** 设置正文：设置页与平板首页右侧共用。 */
+/**
+ * 设置正文。
+ * 平板首页右侧只嵌显示／连接偏好；诊断日志仅在独立设置页展示。
+ */
 @Composable
 fun SettingsContent(
     startup: StartupPreference,
     onStartup: (StartupPreference) -> Unit,
     monitorOrientation: MonitorOrientation,
     onMonitorOrientation: (MonitorOrientation) -> Unit,
-    onExportLogs: () -> Unit,
+    showDiagnostics: Boolean = false,
+    onViewLogs: () -> Unit = {},
+    onClearLogs: () -> Unit = {},
+    onExportLogs: () -> Unit = {},
+    onSyncLogsForComputer: () -> Unit = {},
     exportNote: String? = null,
+    computerHint: String? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -133,37 +150,56 @@ fun SettingsContent(
             }
         }
 
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(GlanceColors.surface)
-                    .border(1.dp, GlanceColors.hairline, RoundedCornerShape(20.dp))
-                    .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text("诊断日志", style = MaterialTheme.typography.titleLarge)
-            Text(
-                "有线／无线连接过程会写入应用内日志。测试完把平板连回电脑后可用 adb 拉取，也可在此分享。",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Box(
+        if (showDiagnostics) {
+            Column(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(GlanceColors.azure.copy(alpha = 0.18f))
-                        .border(1.dp, GlanceColors.azure, RoundedCornerShape(14.dp))
-                        .clickable(onClick = onExportLogs)
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(GlanceColors.surface)
+                        .border(1.dp, GlanceColors.hairline, RoundedCornerShape(20.dp))
+                        .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text("导出／分享诊断日志", style = MaterialTheme.typography.bodyLarge)
-            }
-            if (!exportNote.isNullOrBlank()) {
-                Text(exportNote, style = MaterialTheme.typography.bodyMedium)
+                Text("诊断日志", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "连接与监视过程会自动写入应用内日志。出问题后可在此查看、导出，或把设备连到电脑用 adb 直接读取。",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                LogActionRow(title = "查看日志", detail = "在应用内浏览最近记录", onClick = onViewLogs)
+                LogActionRow(title = "清除日志", detail = "清空缓冲与本地文件", onClick = onClearLogs)
+                LogActionRow(title = "导出／分享", detail = "打包后通过系统分享发出", onClick = onExportLogs)
+                LogActionRow(
+                    title = "同步供电脑读取",
+                    detail = "写入 USB／adb 可拉取的外部目录",
+                    onClick = onSyncLogsForComputer,
+                )
+                if (!exportNote.isNullOrBlank()) {
+                    Text(exportNote, style = MaterialTheme.typography.bodyMedium)
+                }
+                if (!computerHint.isNullOrBlank()) {
+                    Text(computerHint, style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun LogActionRow(title: String, detail: String, onClick: () -> Unit) {
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(GlanceColors.azure.copy(alpha = 0.12f))
+                .border(1.dp, GlanceColors.azure.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.bodyLarge)
+        Text(detail, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

@@ -6,10 +6,6 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.hardware.usb.UsbAccessory
-import android.hardware.usb.UsbDevice
-import android.hardware.usb.UsbManager
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -38,13 +34,13 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.isActive
 import com.opencapture.opencine.appkit.DiscoveryPermissions
 import com.opencapture.opencine.appkit.rememberPermissionGate
 import com.opencapture.opencine.media.FeedEffectsRenderPlan
 import com.opencapture.pocketglance.connection.ConnectionMode
 import com.opencapture.pocketglance.connection.ConnectionPhase
 import com.opencapture.pocketglance.connection.FocusGesture
-import com.opencapture.pocketglance.connection.WiredUsbTransport
 import com.opencapture.pocketglance.diagnostics.GlanceLog
 import com.opencapture.pocketglance.monitor.MonitorLayout
 import com.opencapture.pocketglance.monitor.MonitorOrientation
@@ -56,6 +52,7 @@ import com.opencapture.pocketglance.ui.GlanceTheme
 import com.opencapture.pocketglance.ui.HomeScreen
 import com.opencapture.pocketglance.ui.LiveFeedHost
 import com.opencapture.pocketglance.ui.LivePerformanceGate
+import com.opencapture.pocketglance.ui.LogViewerScreen
 import com.opencapture.pocketglance.ui.MonitorScreen
 import com.opencapture.pocketglance.ui.PreviewLutDialog
 import com.opencapture.pocketglance.ui.SettingsScreen
@@ -66,36 +63,48 @@ class MainActivity : ComponentActivity() {
     private val model: GlanceModel get() = (application as GlanceApp).model
     private var openRequest by mutableIntStateOf(0)
 
-    private var pendingWiredDevice: UsbDevice? = null
-    private var pendingWiredAccessory: UsbAccessory? = null
+    private var wiredCameraPermissionHint by mutableStateOf<String?>(null)
+    private var canRetryCameraPermission = true
     private val cameraPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) model.connectWired(pendingWiredDevice, pendingWiredAccessory)
-            if (!granted) model.reportWiredPermissionDenied()
-            pendingWiredDevice = null
-            pendingWiredAccessory = null
+            if (granted) {
+                wiredCameraPermissionHint = null
+                model.connectWired()
+                canRetryCameraPermission = true
+            } else if (shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)) {
+                wiredCameraPermissionHint = "外接 UVC 预览需要相机权限，只用来显示 Pocket 画面。再次点有线连接即可授权。"
+            } else {
+                canRetryCameraPermission = false
+                wiredCameraPermissionHint = "相机权限已关闭。有线 UVC 预览无法打开；可在系统设置重新允许后再连接。"
+            }
         }
 
     /** 有线 UVC 预览需要 CAMERA 权限；统一走权限门后再 connect。 */
-    private fun connectWired(device: UsbDevice? = null, accessory: UsbAccessory? = null) {
+    private fun connectWired() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
             PackageManager.PERMISSION_GRANTED
         ) {
-            model.connectWired(device, accessory)
-        } else {
-            pendingWiredDevice = device
-            pendingWiredAccessory = accessory
+            model.connectWired()
+        } else if (shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)) {
+            wiredCameraPermissionHint = "外接 UVC 预览需要相机权限，只用来显示 Pocket 画面。再次点有线连接即可授权。"
+        } else if (canRetryCameraPermission) {
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        } else {
+            wiredCameraPermissionHint = "相机权限已关闭。有线 UVC 预览无法打开；可在系统设置重新允许后再连接。"
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        handleUsbIntent(intent)
         setContent {
             GlanceTheme {
-                GlanceRoot(model, openRequest, onConnectWired = { connectWired() })
+                GlanceRoot(
+                    model = model,
+                    openRequest = openRequest,
+                    wiredCameraPermissionHint = wiredCameraPermissionHint,
+                    onConnectWired = ::connectWired,
+                )
             }
         }
     }
@@ -110,55 +119,27 @@ class MainActivity : ComponentActivity() {
         openRequest++
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        handleUsbIntent(intent)
-        openRequest++
-    }
-
-    private fun handleUsbIntent(intent: Intent?) {
-        if (intent == null) return
-        when (intent.action) {
-            UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
-                val device = intent.usbParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
-                if (device != null && WiredUsbTransport.isPocketUvcDevice(device)) {
-                    connectWired(device = device)
-                }
-            }
-            UsbManager.ACTION_USB_ACCESSORY_ATTACHED -> {
-                val accessory = intent.usbParcelableExtra<UsbAccessory>(UsbManager.EXTRA_ACCESSORY)
-                if (accessory != null && WiredUsbTransport.isPocketAccessory(accessory)) {
-                    // AOA 附件不是 UVC 网络摄像头，不做假预览；仅记录。
-                    GlanceLog.i("wired", "AOA accessory attached (not UVC): ${accessory.model}")
-                }
-            }
-        }
-    }
-
     override fun onStop() {
         model.setMonitorForeground(false)
         super.onStop()
     }
 }
 
-@Suppress("DEPRECATION")
-private inline fun <reified T : Any> Intent.usbParcelableExtra(key: String): T? =
-    if (Build.VERSION.SDK_INT >= 33) {
-        getParcelableExtra(key, T::class.java)
-    } else {
-        getParcelableExtra(key) as? T
-    }
-
 private object Routes {
     const val Home = "home"
     const val Monitor = "monitor"
     const val Gallery = "gallery"
     const val Settings = "settings"
+    const val Logs = "logs"
 }
 
 @Composable
-private fun GlanceRoot(model: GlanceModel, openRequest: Int, onConnectWired: () -> Unit) {
+private fun GlanceRoot(
+    model: GlanceModel,
+    openRequest: Int,
+    wiredCameraPermissionHint: String?,
+    onConnectWired: () -> Unit,
+) {
     val nav = rememberNavController()
     val connection by model.connection.collectAsState()
     val foreground by model.monitorForeground.collectAsState()
@@ -189,17 +170,43 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int, onConnectWired: () 
     val usePortraitFallback = wantsPortrait && display.landscape && portraitFallback
     var showLutPicker by rememberSaveable { mutableStateOf(false) }
     var exportNote by remember { mutableStateOf<String?>(null) }
+    val computerHint = remember(context) { GlanceLog.computerAccessHint(context) }
     fun exportDiagnostics() {
         runCatching {
             val file = GlanceLog.exportBundle(context)
             context.startActivity(
                 Intent.createChooser(GlanceLog.shareIntent(context, file), "分享诊断日志"),
             )
-            exportNote = "已导出 ${file.name}（也可等平板连回电脑用 adb 拉取）"
+            exportNote = "已导出 ${file.name}。设备连电脑后也可用 adb 拉取外部 logs 目录。"
         }.onFailure {
             GlanceLog.e("export", "share failed", it)
             exportNote = "导出失败：${it.message}"
         }
+    }
+    fun clearDiagnostics() {
+        runCatching {
+            GlanceLog.clear(context)
+            exportNote = "日志已清除"
+        }.onFailure {
+            GlanceLog.e("log", "clear failed", it)
+            exportNote = "清除失败：${it.message}"
+        }
+    }
+    fun syncDiagnosticsForComputer() {
+        runCatching {
+            GlanceLog.flush()
+            GlanceLog.mirrorToExternal(context, force = true)
+            val path = GlanceLog.externalPersistentFile(context)?.absolutePath
+            exportNote =
+                if (path != null) "已同步到可拉取目录：\n$path"
+                else "同步失败：设备无外部存储目录"
+        }.onFailure {
+            GlanceLog.e("export", "mirror failed", it)
+            exportNote = "同步失败：${it.message}"
+        }
+    }
+    fun openLogViewer() {
+        nav.navigate(Routes.Logs) { launchSingleTop = true }
     }
     val importLuts = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments(), model::importPreviewLuts)
     val discovery =
@@ -266,6 +273,7 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int, onConnectWired: () 
     }
 
     val sessionLive = connection.phase == ConnectionPhase.Live
+    var leavingGallery by remember { mutableStateOf(false) }
     fun returnToMonitor() {
         showLutPicker = false
         if (nav.currentDestination?.route == Routes.Monitor) return
@@ -275,10 +283,28 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int, onConnectWired: () 
             launchSingleTop = true
         }
     }
+    fun leaveGalleryToMonitor() {
+        if (leavingGallery) return
+        leavingGallery = true
+        model.leaveGallery {
+            // Keep leavingGallery true through pop so Gallery onDispose does not
+            // race a second gallery.close() before browse return finishes.
+            returnToMonitor()
+            leavingGallery = false
+        }
+    }
 
     LaunchedEffect(sessionLive, foreground, openRequest) {
         if (foreground && sessionLive && nav.currentDestination?.route != Routes.Monitor) {
-            returnToMonitor()
+            if (nav.currentDestination?.route == Routes.Gallery) leaveGalleryToMonitor()
+            else returnToMonitor()
+        }
+    }
+    LaunchedEffect(sessionLive, route, foreground) {
+        if (!sessionLive || route != Routes.Monitor || !foreground) return@LaunchedEffect
+        while (isActive) {
+            delay(2_000)
+            model.recoverStaleMonitorFeed()
         }
     }
     LaunchedEffect(connection.phase, route) {
@@ -306,9 +332,8 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int, onConnectWired: () 
         }
 
     val showFeed = connection.phase == ConnectionPhase.Live
-    // 有线 UVC 在 Connecting 阶段就挂出直出 TextureView，好让 Camera2 有目标 Surface。
-    val wiredUvc = connection.mode == ConnectionMode.Wired &&
-        (connection.phase == ConnectionPhase.Live || connection.phase == ConnectionPhase.Connecting)
+    // Wired Camera2 output is mounted only after permission and external-camera discovery succeed.
+    val wiredUvc = connection.mode == ConnectionMode.Wired && connection.phase == ConnectionPhase.Live
     var startingFeed by remember(showFeed) { mutableStateOf(true) }
     LaunchedEffect(showFeed, connection.pictureReady) {
         if (showFeed && connection.pictureReady) {
@@ -359,6 +384,7 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int, onConnectWired: () 
                     permissionHint = permissionHint,
                     onConnectWireless = { startWireless() },
                     onConnectWired = onConnectWired,
+                    wiredCameraPermissionHint = wiredCameraPermissionHint,
                     onPickCamera = model::connectToFoundCamera,
                     onDisconnect = model::disconnect,
                     onRetryRecovery = model::retryRecovery,
@@ -372,8 +398,6 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int, onConnectWired: () 
                     onStartup = model::setStartupPreference,
                     monitorOrientation = monitorOrientation,
                     onMonitorOrientation = model::setMonitorOrientation,
-                    onExportLogs = ::exportDiagnostics,
-                    exportNote = exportNote,
                 )
             }
             composable(Routes.Monitor) {
@@ -395,12 +419,17 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int, onConnectWired: () 
                 )
             }
             composable(Routes.Gallery) {
-                BackHandler(enabled = sessionLive && route == Routes.Gallery) { returnToMonitor() }
+                BackHandler(enabled = sessionLive && route == Routes.Gallery && !leavingGallery) {
+                    leaveGalleryToMonitor()
+                }
                 val gallery by model.gallery.state.collectAsState()
                 val galleryTags by model.galleryTags.collectAsState()
                 DisposableEffect(model) {
                     model.gallery.open()
-                    onDispose { model.gallery.close() }
+                    onDispose {
+                        // 正常返回已走 leaveGallery（closeAndWait）；此处兜底取消会话。
+                        if (!leavingGallery) model.gallery.close()
+                    }
                 }
                 GalleryScreen(
                     state = gallery,
@@ -409,7 +438,13 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int, onConnectWired: () 
                     onDelete = model.gallery::delete,
                     onRefresh = model.gallery::refresh,
                     onLoadMore = model.gallery::loadMore,
-                    onBack = { if (sessionLive) returnToMonitor() else nav.popBackStack(Routes.Home, inclusive = false) },
+                    onBack = {
+                        when {
+                            leavingGallery -> Unit
+                            sessionLive -> leaveGalleryToMonitor()
+                            else -> nav.popBackStack(Routes.Home, inclusive = false)
+                        }
+                    },
                 )
             }
             composable(Routes.Settings) {
@@ -421,16 +456,45 @@ private fun GlanceRoot(model: GlanceModel, openRequest: Int, onConnectWired: () 
                     onMonitorOrientation = model::setMonitorOrientation,
                     backToMonitor = sessionLive,
                     onBack = { if (sessionLive) returnToMonitor() else nav.popBackStack(Routes.Home, inclusive = false) },
-                    exportNote = exportNote,
+                    onViewLogs = ::openLogViewer,
+                    onClearLogs = ::clearDiagnostics,
                     onExportLogs = ::exportDiagnostics,
+                    onSyncLogsForComputer = ::syncDiagnosticsForComputer,
+                    exportNote = exportNote,
+                    computerHint = computerHint,
+                )
+            }
+            composable(Routes.Logs) {
+                val previous = nav.previousBackStackEntry?.destination?.route
+                val backLabel =
+                    when {
+                        previous == Routes.Settings -> "返回设置"
+                        sessionLive -> "返回监视界面"
+                        else -> "返回连接首页"
+                    }
+                BackHandler(enabled = true) {
+                    if (!nav.popBackStack()) nav.popBackStack(Routes.Home, inclusive = false)
+                }
+                LogViewerScreen(
+                    backLabel = backLabel,
+                    onBack = {
+                        if (!nav.popBackStack()) {
+                            if (sessionLive) returnToMonitor() else nav.popBackStack(Routes.Home, inclusive = false)
+                        }
+                    },
                 )
             }
         }
         if (lutPickerVisible) {
-            PreviewLutDialog(previewLuts, previewAvailable, connection.chrome.colorChip,
-                { importLuts.launch(arrayOf("*/*")) }, model::selectPreviewLut) {
-                returnToMonitor()
-            }
+            PreviewLutDialog(
+                state = previewLuts,
+                available = previewAvailable,
+                colorLabel = connection.chrome.colorChip,
+                onImport = { importLuts.launch(arrayOf("*/*")) },
+                onSelect = model::selectPreviewLut,
+                onToggleFavorite = model::toggleFavoriteLut,
+                onClose = { returnToMonitor() },
+            )
         }
     }
 }
