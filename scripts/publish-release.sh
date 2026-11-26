@@ -43,13 +43,38 @@ fi
 git push origin "refs/tags/$TAG"
 
 echo "== GitHub Release $TAG =="
+# 改动说明：优先 RELEASE_NOTES 环境变量 / release-notes.md；否则用最近一条提交里「：」后的摘要。
+NOTES_FILE="$ROOT/release-notes.md"
+if [[ -n "${RELEASE_NOTES:-}" ]]; then
+  CHANGELOG="$RELEASE_NOTES"
+elif [[ -f "$NOTES_FILE" ]]; then
+  CHANGELOG="$(cat "$NOTES_FILE")"
+else
+  SUBJECT="$(git log -1 --pretty=%s)"
+  # 「发布 x.y.z：改动摘要」→ 取冒号后；否则整句当摘要
+  if [[ "$SUBJECT" == *：* ]]; then
+    SUMMARY="${SUBJECT#*：}"
+  elif [[ "$SUBJECT" == *:* ]]; then
+    SUMMARY="${SUBJECT#*:}"
+  else
+    SUMMARY="$SUBJECT"
+  fi
+  SUMMARY="$(echo "$SUMMARY" | sed 's/[。．.]*$//')"
+  CHANGELOG="- ${SUMMARY}"
+fi
+
 BODY="$(cat <<EOF
-PocketGlance ${TAG}（versionCode ${VERSION_CODE}）。
+PocketGlance ${TAG}（versionCode ${VERSION_CODE}）
 
-安装包：附件 \`${APK_NAME}\`
-手机：设置 → 关于 → 检查更新（需允许安装未知应用）
+## 安装
+- 附件：\`${APK_NAME}\`
+- 设置 → 关于 → 检查更新（需允许安装未知应用）
 
-源代码：本 Release 页面的 Source code (zip / tar.gz)
+## 本版改动
+${CHANGELOG}
+
+## 源码
+本页 Source code (zip / tar.gz)，对应 tag \`${TAG}\`。
 EOF
 )"
 
